@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Prueba técnica — INDIMON SAS</title>
+<link rel="stylesheet" href="comun.css">
+<style>
+.q{padding:14px 0;border-top:1px solid var(--gris)}.q:first-of-type{border-top:0}
+.q .enun{font-weight:600;margin-bottom:8px}
+.op{display:flex;gap:10px;align-items:flex-start;padding:7px 10px;border:1px solid transparent;border-radius:8px;cursor:pointer}
+.op:hover{background:var(--gris)}.op input{margin-top:4px}.op.sel{background:var(--celeste);border-color:var(--azul2)}
+.vf{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center;padding:4px 0}
+.vf .bt{display:flex;gap:6px}.vf .bt label{border:1px solid var(--linea);border-radius:8px;padding:4px 12px;cursor:pointer;font-weight:600}
+.vf .bt input{display:none}.vf .bt label:has(input:checked){background:var(--azul);color:#fff;border-color:var(--azul)}
+.fig{text-align:center;margin:8px 0}.fig img{max-width:100%;border:1px solid var(--linea);border-radius:8px;background:#fff;cursor:zoom-in}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.campo{display:grid;grid-template-columns:1fr 140px 56px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--gris)}
+@media(max-width:600px){.campo{grid-template-columns:1fr 110px 44px}}
+.empar{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--gris)}
+.empar img{width:150px;border:1px solid var(--linea);border-radius:8px;background:#fff}
+.abi{padding:8px 0;border-top:1px solid var(--gris)}.abi img{max-width:260px;border:1px solid var(--linea);border-radius:8px;background:#fff;display:block;margin:6px 0}
+.barra{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--linea);padding:10px 18px;display:flex;gap:12px;align-items:center;justify-content:space-between;z-index:15}
+table.t.anexo td,table.t.anexo th{text-align:center}
+</style>
+<script>document.write('<script src="config.js?t=' + Date.now() + '"><\/script>');</script>
+<script src="comun.js"></script>
+</head>
+<body>
+<header class="top"><span class="marca">INDIMON SAS</span><span class="sec" id="hSec">Prueba técnica</span><button class="btn claro oculto" id="bAnexo">Hoja de datos</button><span class="reloj oculto" id="reloj">--:--</span></header>
+<main class="angosto" id="app"><div class="card"><p class="tenue">Cargando su prueba…</p></div></main>
+<script>
+"use strict";
+const T = new URLSearchParams(location.search).get("t") || "";
+const LK = "indimon_prueba_" + T;
+let INFO = null, P = null, E = null, tickH = null, enPrueba = false;
+const app = $("#app");
+
+function guardar() { ls(LK, E); }
+function hdr(t, reloj, anexo) { $("#hSec").textContent = t; $("#reloj").classList.toggle("oculto", !reloj); $("#bAnexo").classList.toggle("oculto", !anexo || !P || !P.anexo); }
+function fmt(ms) { ms = Math.max(0, ms); const s = Math.ceil(ms / 1000), m = Math.floor(s / 60); return String(m).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+function logoHTML() { return `<img src="img/logo.jpg" alt="INDIMON" class="logo">`; }
+$("#bAnexo").onclick = () => modal(`<h2>Hoja de datos</h2>` + P.anexo.tablas.map(t => `<h3>${esc(t.title)}</h3><div class="tw"><table class="t anexo"><tr>${t.head.map(h => `<th>${esc(h)}</th>`).join("")}</tr>${t.rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`).join("") + `<p class="tenue">${esc(P.anexo.nota || "")}</p><div style="text-align:right"><button class="btn" onclick="cerrarModal()">Cerrar</button></div>`, true);
+function verImg(src) { modal(`<div style="text-align:right;margin-bottom:6px"><button class="btn" onclick="cerrarModal()">Cerrar</button></div><img src="${src}" style="max-width:100%">`, true); }
+
+/* antiayudas */
+["copy", "cut", "paste", "contextmenu", "dragstart"].forEach(ev => document.addEventListener(ev, e => { if (enPrueba && !e.target.closest("[data-libre]")) e.preventDefault(); }));
+function salio() { if (!enPrueba || !E || E.fase !== "seccion") return; E.foco = (E.foco || 0) + 1; guardar(); }
+document.addEventListener("visibilitychange", () => { if (document.hidden) salio(); });
+window.addEventListener("blur", salio);
+
+async function iniciar() {
+  if (!T) return error("El enlace está incompleto. Ábralo tal como le llegó por WhatsApp.");
+  E = ls(LK);
+  if (E && E.fase === "enviando") return pantallaEnvio();
+  if (E && E.fase === "fin") return pantallaFin();
+  try { INFO = await api("candAbrir", { t: T }); } catch (e) { return error(e.message); }
+  if (INFO.finalizada) { E = { fase: "fin" }; guardar(); return pantallaFin(); }
+  P = INFO.prueba;
+  if (INFO.iniciada && E) { E.iniServ = INFO.iniciada; E.desfase = Date.now() - Date.parse(INFO.ahora); }
+  if (!E) E = { fase: "inicio", sec: 0, resp: {}, inicioSec: {}, tiempos: {}, foco: 0 };
+  if (E.fase === "seccion") return pantallaSeccion();
+  if (E.fase === "inter") return pantallaInter();
+  pantallaInicio();
+}
+function error(m) { hdr("Prueba técnica", false, false); app.innerHTML = `<div class="card">${logoHTML()}<h1>No se puede abrir la prueba</h1><p>${esc(m)}</p><p class="tenue">Si cree que es un error, comuníquese con Recursos Humanos de INDIMON.</p></div>`; }
+
+function pantallaInicio() {
+  hdr(P.nombre, false, false);
+  const min = P.secciones.reduce((a, s) => a + (s.minutos || 0), 0);
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>${esc(P.nombre)}</h1>
+   <p>Hola, <b>${esc(INFO.aspirante)}</b>. Esta prueba hace parte del proceso de selección para el cargo de <b>${esc(INFO.cargo)}</b>.</p>
+   <p class="tenue">Solicitud ${esc(INFO.id)} · Documento ${esc(INFO.documento)}</p></div>
+   <div class="card"><h2>Antes de empezar</h2><ul>
+   <li>Duración: <b>${min} minutos</b>${P.secciones.length > 1 ? ` en ${P.secciones.length} partes; cada parte tiene su propio tiempo y, al cerrarla, no se puede volver` : ""}.</li>
+   <li>Tenga a mano calculadora, lápiz y papel para hacer cálculos.</li>
+   <li>Cuando el tiempo termina, la prueba se entrega sola con lo que haya respondido.</li>
+   <li>No cierre esta página mientras presenta la prueba. Si se le cierra, abra de nuevo el mismo enlace: el tiempo sigue corriendo.</li>
+   <li>Salir de la página o cambiar de aplicación queda registrado.</li>
+   ${P.anexo ? "<li>Puede consultar la <b>Hoja de datos</b> (botón de arriba) durante la prueba.</li>" : ""}
+   </ul>
+   <label class="f" style="display:flex;gap:8px;align-items:flex-start;font-weight:500"><input type="checkbox" id="dec" style="margin-top:4px"><span>Declaro que soy <b>${esc(INFO.aspirante)}</b> y que presento esta prueba solo, sin ayuda de otras personas, de inteligencia artificial, de apuntes ni de internet.</span></label>
+   <div id="err" class="err"></div><button class="btn" id="bIni">Iniciar prueba</button></div>`;
+  $("#bIni").onclick = async () => {
+    if (!$("#dec").checked) { $("#err").textContent = "Debe aceptar la declaración para continuar."; return; }
+    $("#bIni").disabled = true; $("#err").textContent = "";
+    try { const r = await api("candIniciar", { t: T }); E.iniServ = r.iniciada; E.desfase = Date.now() - Date.parse(r.ahora); } catch (e) { $("#err").textContent = e.message; $("#bIni").disabled = false; return; }
+    E.declaracion = true; E.fase = "inter"; guardar();
+    try { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => { }); } catch (e) { }
+    pantallaInter();
+  };
+}
+function pantallaInter() {
+  enPrueba = true; clearInterval(tickH);
+  const s = P.secciones[E.sec];
+  if (P.secciones.length === 1) { E.fase = "seccion"; E.inicioSec[s.id] = E.inicioSec[s.id] || Date.now(); guardar(); return pantallaSeccion(); }
+  hdr(`${s.titulo}`, false, true);
+  app.innerHTML = `<div class="card"><h1>${esc(s.titulo)}</h1>${s.descripcion ? `<p>${esc(s.descripcion)}</p>` : ""}
+    <p><b>${s.preguntas.length} pregunta(s)</b> · <b>${s.minutos} minutos</b></p>
+    <p class="tenue">Parte ${E.sec + 1} de ${P.secciones.length}. El tiempo empieza al presionar el botón. Al cerrar esta parte no podrá volver a ella.</p>
+    <button class="btn" id="bGo">Comenzar</button></div>`;
+  $("#bGo").onclick = () => { E.fase = "seccion"; E.inicioSec[s.id] = Date.now(); guardar(); pantallaSeccion(); };
+}
+
+/* ----- render de preguntas ----- */
+function rq(q, n) {
+  const R = E.resp, id = q.id;
+  const img = q.imagen ? `<div class="fig"><img src="${q.imagen}" onclick="verImg(this.src)" alt=""></div>` : "";
+  const imgs = q.imagenes && q.imagenes.length ? `<div class="figs">${q.imagenes.map(i => `<div class="fig"><img src="${i.src}" onclick="verImg(this.src)" alt="">${i.pie ? `<div class="tenue">${esc(i.pie)}</div>` : ""}</div>`).join("")}</div><div class="tenue" style="text-align:center">Toque la figura para ampliarla</div>` : "";
+  let h = `<div class="q" data-q="${esc(id)}"><div class="enun">${n}. ${q.titulo ? esc(q.titulo) + (q.enunciado ? ". " : "") : ""}${esc(q.enunciado)}</div>${img}${imgs}`;
+  if (q.tipo === "unica" || q.tipo === "multiple") {
+    const orden = barajar(q.opciones.length, T + id), tipo = q.tipo === "unica" ? "radio" : "checkbox";
+    if (q.tipo === "multiple") h += `<div class="tenue">Puede marcar varias.</div>`;
+    h += orden.map((i, j) => `<label class="op"><input type="${tipo}" name="r_${esc(id)}" data-q="${esc(id)}" value="${i}"><span>${"abcdefghij"[j]}) ${esc(q.opciones[i])}</span></label>`).join("");
+  } else if (q.tipo === "vf") {
+    h += q.items.map((it, i) => `<div class="vf"><span>${esc(it)}</span><span class="bt"><label><input type="radio" name="vf_${esc(id)}_${i}" data-q="${esc(id)}" data-i="${i}" value="V">V</label><label><input type="radio" name="vf_${esc(id)}_${i}" data-q="${esc(id)}" data-i="${i}" value="F">F</label></span></div>`).join("");
+  } else if (q.tipo === "numero") {
+    h += q.campos.map(c => `<div class="campo"><span>${esc(c.etiqueta)}</span><input type="text" inputmode="decimal" autocomplete="off" data-libre="1" data-q="${esc(id)}" data-k="${esc(c.k)}" placeholder="0.0"><span class="tenue">${esc(c.unidad || "")}</span></div>`).join("");
+  } else if (q.tipo === "emparejar") {
+    const orden = barajar(q.opciones.length, T + id + "o"), oi = barajar(q.items.length, T + id + "i");
+    h += oi.map((i, j) => { const it = q.items[i]; return `<div class="empar" style="${it.texto ? "grid-template-columns:110px 1fr" : ""}">${it.imagen ? `<img src="${it.imagen}" alt="">` : `<b style="font-size:17px">${esc(it.texto)}</b>`}<select data-q="${esc(id)}" data-i="${i}"><option value="">— elija —</option>${orden.map(o => `<option value="${o}">${esc(q.opciones[o])}</option>`).join("")}</select></div>`; }).join("");
+  } else if (q.tipo === "abierta") {
+    h += q.items.map((it, i) => `<div class="abi">${q.items.length > 1 || it.imagen ? `<b>${esc(it.etiqueta)}</b>` : ""}${it.imagen ? `<img src="${it.imagen}" onclick="verImg(this.src)" alt="">` : ""}<textarea data-libre="1" data-q="${esc(id)}" data-i="${i}" placeholder="Escriba su respuesta"></textarea></div>`).join("");
+  }
+  return h + `</div>`;
+}
+function cargarResp() {
+  $$("[data-q]", app).forEach(el => {
+    const id = el.dataset.q, r = E.resp[id]; if (r === undefined || el.classList.contains("q")) return;
+    if (el.type === "radio" && el.dataset.i === undefined) { if (+el.value === r) { el.checked = true; el.closest(".op").classList.add("sel"); } }
+    else if (el.type === "radio") { if (r[el.dataset.i] === (el.value === "V")) el.checked = true; }
+    else if (el.type === "checkbox") { if (r.indexOf(+el.value) >= 0) { el.checked = true; el.closest(".op").classList.add("sel"); } }
+    else if (el.tagName === "SELECT") { if (r[el.dataset.i] !== undefined && r[el.dataset.i] !== null) el.value = r[el.dataset.i]; }
+    else if (el.dataset.k) { if (r[el.dataset.k] !== undefined) el.value = r[el.dataset.k]; }
+    else if (el.tagName === "TEXTAREA") { if (r[el.dataset.i] !== undefined) el.value = r[el.dataset.i]; }
+  });
+}
+function leerCambio(el) {
+  const id = el.dataset.q, R = E.resp;
+  if (el.type === "radio" && el.dataset.i === undefined) { R[id] = +el.value; $$(`input[name="r_${CSS.escape(id)}"]`).forEach(x => x.closest(".op").classList.toggle("sel", x.checked)); }
+  else if (el.type === "radio") { R[id] = R[id] || []; R[id][+el.dataset.i] = el.value === "V"; }
+  else if (el.type === "checkbox") { R[id] = $$(`input[name="r_${CSS.escape(id)}"]`).filter(x => x.checked).map(x => +x.value); el.closest(".op").classList.toggle("sel", el.checked); }
+  else if (el.tagName === "SELECT") { R[id] = R[id] || []; R[id][+el.dataset.i] = el.value === "" ? null : +el.value; }
+  else if (el.dataset.k) { R[id] = R[id] || {}; R[id][el.dataset.k] = el.value; }
+  else if (el.tagName === "TEXTAREA") { R[id] = R[id] || []; R[id][+el.dataset.i] = el.value; }
+  guardar(); contar();
+}
+function contar() {
+  const s = P.secciones[E.sec]; let n = 0;
+  s.preguntas.forEach(q => { const r = E.resp[q.id]; if (r === undefined || r === null) return; if (Array.isArray(r) ? r.some(x => x !== null && x !== undefined && x !== "") : typeof r === "object" ? Object.values(r).some(v => String(v).trim()) : true) n++; });
+  const c = $("#cnt"); if (c) c.textContent = n + " de " + s.preguntas.length;
+}
+function pantallaSeccion() {
+  enPrueba = true;
+  const s = P.secciones[E.sec];
+  hdr(s.titulo, true, true);
+  let n = 0; P.secciones.slice(0, E.sec).forEach(x => n += x.preguntas.length);
+  app.innerHTML = `<div class="card noselect"><h2>${esc(s.titulo)}</h2>${s.preguntas.map((q, i) => rq(q, n + i + 1)).join("")}</div>
+   <div class="barra"><span class="tenue">Respondidas: <b id="cnt"></b></span><button class="btn" id="bFin">${E.sec + 1 < P.secciones.length ? "Terminar esta parte" : "Entregar prueba"}</button></div>`;
+  cargarResp(); contar();
+  $$("[data-q]", app).forEach(el => { if (el.classList.contains("q")) return; el.addEventListener("change", () => leerCambio(el)); el.addEventListener("input", () => leerCambio(el)); });
+  $("#bFin").onclick = () => confirmar(E.sec + 1 < P.secciones.length ? "¿Terminar esta parte?" : "¿Entregar la prueba?", E.sec + 1 < P.secciones.length ? "No podrá volver a esta parte." : "Después de entregar no podrá cambiar sus respuestas.", () => cerrarSeccion(false), E.sec + 1 < P.secciones.length ? "Terminar parte" : "Entregar");
+  clearInterval(tickH); tickH = setInterval(tick, 500); tick();
+}
+function limiteSeccion() {
+  const s = P.secciones[E.sec], fin = E.inicioSec[s.id] + s.minutos * 60000;
+  let finGlobal = Infinity;
+  if (E.iniServ) finGlobal = Date.parse(E.iniServ) + (E.desfase || 0) + P.secciones.reduce((a, x) => a + x.minutos, 0) * 60000 + 120000;
+  return Math.min(fin, finGlobal);
+}
+function tick() {
+  if (!E || E.fase !== "seccion") return;
+  const rem = limiteSeccion() - Date.now(), r = $("#reloj"); r.textContent = fmt(rem); r.classList.toggle("bajo", rem < 120000);
+  if (rem <= 0) cerrarSeccion(true);
+}
+function cerrarSeccion(auto) {
+  clearInterval(tickH); cerrarModal();
+  const s = P.secciones[E.sec]; E.tiempos[s.id] = Math.min(Date.now() - E.inicioSec[s.id], s.minutos * 60000);
+  if (E.sec + 1 < P.secciones.length) { E.sec++; E.fase = "inter"; guardar(); pantallaInter(); }
+  else { E.fase = "enviando"; guardar(); pantallaEnvio(); }
+}
+let intentos = 0, reintH = null;
+async function pantallaEnvio() {
+  enPrueba = false; clearInterval(tickH); hdr("Entregando prueba", false, false);
+  clearTimeout(reintH); intentos++;
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba terminada</h1><div class="aviso"><b>Registrando sus respuestas…</b> No cierre esta página.${intentos > 1 ? ` (intento ${intentos})` : ""}</div></div>`;
+  try {
+    await api("candEntregar", { t: T, respuestas: E.resp, tiempos: E.tiempos, foco: E.foco || 0, declaracion: !!E.declaracion, dispositivo: navigator.userAgent.slice(0, 120) });
+    E = { fase: "fin" }; guardar(); pantallaFin();
+  } catch (e) {
+    if (e.servidor && /no válido|anulada/i.test(e.message)) return error(e.message);
+    app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba terminada</h1><div class="aviso"><b>No se pudo registrar todavía.</b> Revise su conexión a internet. Se intentará de nuevo automáticamente en 10 segundos. <b>No cierre esta página.</b></div><button class="btn" id="bRe">Reintentar ahora</button></div>`;
+    $("#bRe").onclick = pantallaEnvio; reintH = setTimeout(pantallaEnvio, 10000);
+  }
+}
+function pantallaFin() {
+  enPrueba = false; hdr("Prueba entregada", false, false);
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba entregada</h1><div class="aviso ok" style="font-size:16px"><b>✓ Sus respuestas quedaron registradas.</b> Ya puede cerrar esta página.</div><p class="tenue">Recursos Humanos de INDIMON se comunicará con usted para informarle los siguientes pasos del proceso.</p></div>`;
+}
+iniciar();
+</script>
+</body>
+</html>

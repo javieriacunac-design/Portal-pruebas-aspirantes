@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Portal de Evaluación de Candidatos — INDIMON SAS</title>
+<link rel="stylesheet" href="comun.css">
+<style>
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 14px}
+nav.tabs button{background:#fff;border:1px solid var(--linea);border-radius:8px;padding:8px 14px;font-weight:600;color:var(--azul)}
+nav.tabs button.act{background:var(--azul);color:#fff;border-color:var(--azul)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:12px 14px;cursor:pointer}
+.kpi b{display:block;font-size:26px;color:var(--azul);line-height:1.1}.kpi span{font-size:13px;color:var(--tenue)}
+.kpi.alerta b{color:var(--rojo)}
+.linea{display:flex;gap:0;flex-wrap:wrap;margin:6px 0 4px}
+.paso{flex:1;min-width:110px;text-align:center;font-size:12.5px;padding:6px 4px;border-top:4px solid #D5DAE0;color:var(--tenue)}
+.paso.hecho{border-color:var(--verde);color:var(--tinta)}.paso.actual{border-color:var(--azul2);color:var(--azul);font-weight:700}
+.paso small{display:block;color:var(--tenue);font-weight:400}
+.dato{font-size:13px;color:var(--tenue)}.dato b{display:block;color:var(--tinta);font-size:15px}
+.qrev{border-top:1px solid var(--gris);padding:10px 0}.qrev .enun{font-weight:600}
+.qrev img{max-width:220px;border:1px solid var(--linea);border-radius:6px;background:#fff;display:block;margin:4px 0}
+.ok-t{color:var(--verde);font-weight:700}.mal-t{color:var(--rojo);font-weight:700}
+.bloqueo{background:#F4F6F8;border:1px dashed #9AA5B1;border-radius:10px;padding:12px;color:#4A5561}
+.firma{background:#F8FAFC;border-left:4px solid var(--verde);padding:8px 12px;border-radius:6px;margin:6px 0}
+</style>
+<script>document.write('<script src="config.js?t=' + Date.now() + '"><\/script>');</script>
+<script src="comun.js"></script>
+</head>
+<body>
+<header class="top"><span class="marca">INDIMON SAS</span><span class="sec" id="hSec">Portal de Evaluación de Candidatos</span><span id="hUsr" class="tenue" style="color:#DCE6F1"></span><button class="btn claro oculto" id="bClave">Cambiar clave</button><button class="btn claro oculto" id="bSalir">Salir</button></header>
+<main id="app"></main>
+<script>
+"use strict";
+const app = $("#app");
+const SK = "indimon_portal_sesion";
+let SES = null, PRUEBAS = [], SOLS = [], VISTA = "sol", FILTRO = {};
+const CARGOS = ["Armador Tubero 1A", "Ayudante Técnico", "Coordinador de Producción", "Mecánico Pailero", "Pailero 2", "Soldador 1A", "Soldador 2", "Soldador Armador", "Supervisor de Obra", "Supervisor SSTA", "Técnico Electricista"];
+const ROL = { ADMIN: "Administrador", RH: "Recursos Humanos", TEC: "Departamento Técnico" };
+const esRH = () => SES && (SES.usuario.rol === "RH" || SES.usuario.rol === "ADMIN");
+const esTEC = () => SES && (SES.usuario.rol === "TEC" || SES.usuario.rol === "ADMIN");
+const esADM = () => SES && SES.usuario.rol === "ADMIN";
+const URL_PRUEBA = t => location.href.split("#")[0].split("?")[0].replace(/[^/]*$/, "") + "prueba.html?t=" + encodeURIComponent(t);
+
+async function q(a, d, ms) {
+  try { return await api(a, Object.assign({ token: SES && SES.token }, d || {}), ms); }
+  catch (e) { if (/Sesión vencida|inactivo/.test(e.message)) { ls(SK, null); SES = null; pantallaLogin(e.message); throw e; } throw e; }
+}
+function setHdr() {
+  $("#hUsr").textContent = SES ? `${SES.usuario.nombre} · ${ROL[SES.usuario.rol]}` : "";
+  $("#bSalir").classList.toggle("oculto", !SES); $("#bClave").classList.toggle("oculto", !SES);
+}
+$("#bSalir").onclick = async () => { try { await q("salir"); } catch (e) { } ls(SK, null); SES = null; pantallaLogin(); };
+$("#bClave").onclick = () => pantallaClave(false);
+
+/* ===== ingreso ===== */
+function pantallaLogin(msg) {
+  setHdr();
+  app.className = "angosto";
+  app.innerHTML = `<div class="card" style="max-width:440px;margin:30px auto"><img src="img/logo.jpg" class="logo" alt="INDIMON"><h1>Portal de Evaluación de Candidatos</h1>
+   <p class="tenue">Recursos Humanos y Departamento Técnico</p>
+   <form id="fL"><label class="f">Usuario<input type="text" id="lU" autocomplete="username" autocapitalize="none"></label>
+   <label class="f">Clave<input type="password" id="lC" autocomplete="current-password"></label>
+   <div id="lE" class="err">${esc(msg || "")}</div><button class="btn" id="lB" style="width:100%">Ingresar</button></form>
+   ${API ? "" : `<div class="aviso mal">El portal aún no está conectado a su hoja de Google (archivo config.js).</div>`}</div>`;
+  $("#fL").onsubmit = async ev => {
+    ev.preventDefault(); $("#lE").textContent = ""; $("#lB").disabled = true;
+    try { const r = await api("login", { usuario: $("#lU").value.trim().toLowerCase(), clave: $("#lC").value }); SES = r; ls(SK, SES); setHdr(); r.usuario.debeCambiar ? pantallaClave(true) : arrancar(); }
+    catch (e) { $("#lE").textContent = e.message; $("#lB").disabled = false; }
+  };
+}
+function pantallaClave(obligatorio) {
+  app.className = "angosto";
+  app.innerHTML = `<div class="card" style="max-width:460px;margin:30px auto"><h1>Cambiar clave</h1>${obligatorio ? `<div class="aviso">Por seguridad, cambie la clave temporal antes de continuar.</div>` : ""}
+   <label class="f">Clave actual<input type="password" id="c0" autocomplete="current-password"></label>
+   <label class="f">Clave nueva (mínimo 8 caracteres)<input type="password" id="c1" autocomplete="new-password"></label>
+   <label class="f">Repita la clave nueva<input type="password" id="c2" autocomplete="new-password"></label>
+   <div id="cE" class="err"></div><div class="fila"><button class="btn" id="cB">Guardar</button>${obligatorio ? "" : `<button class="btn sec" id="cV">Volver</button>`}</div></div>`;
+  if (!obligatorio) $("#cV").onclick = () => arrancar();
+  $("#cB").onclick = async () => {
+    if ($("#c1").value !== $("#c2").value) { $("#cE").textContent = "Las claves nuevas no coinciden."; return; }
+    $("#cB").disabled = true;
+    try { const r = await q("cambiarClave", { actual: $("#c0").value, nueva: $("#c1").value }); SES.usuario = r.usuario; ls(SK, SES); arrancar(); }
+    catch (e) { $("#cE").textContent = e.message; $("#cB").disabled = false; }
+  };
+}
+
+/* ===== estructura ===== */
+async function arrancar() {
+  setHdr(); app.className = "";
+  app.innerHTML = `<div class="card"><p class="tenue">Cargando…</p></div>`;
+  try { PRUEBAS = await q("pruebas"); } catch (e) { if (SES) app.innerHTML = `<div class="card"><div class="aviso mal">${esc(e.message)}</div></div>`; return; }
+  const h = (location.hash || "").replace("#", "");
+  if (/^SOL-\d+$/.test(h)) return verSolicitud(h);
+  ir(VISTA);
+}
+function tabs() {
+  const t = [["sol", "Solicitudes"]];
+  if (esRH()) t.push(["nueva", "Nueva solicitud"]);
+  t.push(["pruebas", "Pruebas"]);
+  if (esADM()) t.push(["usuarios", "Usuarios"], ["bitacora", "Bitácora"]);
+  return `<nav class="tabs noimprimir">${t.map(([k, l]) => `<button data-v="${k}" class="${VISTA === k ? "act" : ""}">${l}</button>`).join("")}</nav>`;
+}
+function ir(v) {
+  VISTA = v; if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+  ({ sol: vistaSolicitudes, nueva: vistaNueva, pruebas: vistaPruebas, usuarios: vistaUsuarios, bitacora: vistaBitacora }[v] || vistaSolicitudes)();
+}
+function enlazarTabs() { $$("nav.tabs button").forEach(b => b.onclick = () => ir(b.dataset.v)); }
+function pEstado(e) { return `<span class="pill ${{ "Pendiente": "p-gris", "Enviada": "p-azul", "En proceso": "p-am", "Finalizada": "p-ok", "Anulada": "p-mal" }[e] || "p-gris"}">${esc(e)}</span>`; }
+function pTec(s) {
+  if (s.conceptoFinal) return `<span class="pill ${s.conceptoFinal.resultado === "No apto" ? "p-mal" : "p-ok"}">${esc(s.conceptoFinal.resultado)}</span>`;
+  if (s.estadoTecnico === "Sin resultado") return `<span class="tenue">—</span>`;
+  return `<span class="pill p-am">${esc(s.estadoTecnico.replace("Pendiente de ", "Pend. "))}</span>`;
+}
+function pPuntaje(s) {
+  if (!s.puntaje) return `<span class="tenue">—</span>`;
+  const p = s.puntaje, pend = p.pendientesManual > 0;
+  return `<b>${p.pct}%</b> <span class="tenue">(${p.total}/${p.max})</span>${pend ? ` <span class="pill p-am" title="Preguntas abiertas por calificar">por calificar</span>` : p.aprueba ? ` <span class="pill p-ok">≥${p.aprobacion}%</span>` : ` <span class="pill p-mal">&lt;${p.aprobacion}%</span>`}`;
+}
+function nombrePrueba(id) { const p = PRUEBAS.find(x => x.id === id); return p ? p.nombre.replace("Prueba técnica ", "") : id; }
+
+/* ===== solicitudes ===== */
+async function vistaSolicitudes() {
+  app.innerHTML = tabs() + `<div class="card"><p class="tenue">Cargando solicitudes…</p></div>`; enlazarTabs();
+  try { SOLS = await q("solicitudes"); } catch (e) { app.innerHTML = tabs() + `<div class="card"><div class="aviso mal">${esc(e.message)}</div></div>`; enlazarTabs(); return; }
+  const c = k => SOLS.filter(k).length;
+  const kp = [
+    ["Todas", s => s.estado !== "Anulada", ""],
+    ["Por enviar", s => s.estado === "Pendiente", "Pendiente"],
+    ["Enviadas / en curso", s => s.estado === "Enviada" || s.estado === "En proceso", "curso"],
+    ["Pendientes revisión técnica", s => s.estado === "Finalizada" && !s.conceptoFinal, "tec", true],
+    ["Con concepto técnico", s => !!s.conceptoFinal, "concepto"]];
+  app.innerHTML = tabs() + `<div class="kpis noimprimir">${kp.map(([l, f, k, al]) => `<div class="kpi ${al && c(f) ? "alerta" : ""}" data-k="${k}"><b>${c(f)}</b><span>${l}</span></div>`).join("")}</div>
+   <div class="card"><div class="g3 noimprimir"><label class="f">Buscar<input type="text" id="fT" placeholder="Nombre, documento o ID"></label>
+   <label class="f">Prueba<select id="fP"><option value="">Todas</option>${PRUEBAS.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("")}</select></label>
+   <label class="f">Estado<select id="fE"><option value="">Todos (sin anuladas)</option><option value="Pendiente">Pendiente</option><option value="curso">Enviada / En proceso</option><option value="tec">Pendiente revisión técnica</option><option value="concepto">Con concepto técnico</option><option value="Anulada">Anulada</option></select></label></div>
+   <div class="tw" id="tabla"></div><div class="fila noimprimir" style="margin-top:10px"><button class="btn sec" id="bCsv">Copiar tabla para Excel</button><span id="csvM" class="tenue"></span></div></div>`;
+  enlazarTabs();
+  $("#fT").value = FILTRO.t || ""; $("#fP").value = FILTRO.p || ""; $("#fE").value = FILTRO.e || "";
+  const pinta = () => {
+    FILTRO = { t: $("#fT").value.trim().toLowerCase(), p: $("#fP").value, e: $("#fE").value };
+    const f = SOLS.filter(s => {
+      if (FILTRO.t && !(s.aspirante + " " + s.documento + " " + s.id + " " + s.cargo).toLowerCase().includes(FILTRO.t)) return false;
+      if (FILTRO.p && s.pruebaId !== FILTRO.p) return false;
+      const e = FILTRO.e;
+      if (!e) return s.estado !== "Anulada";
+      if (e === "curso") return s.estado === "Enviada" || s.estado === "En proceso";
+      if (e === "tec") return s.estado === "Finalizada" && !s.conceptoFinal;
+      if (e === "concepto") return !!s.conceptoFinal;
+      return s.estado === e;
+    });
+    $("#tabla").innerHTML = f.length ? `<table class="t"><tr><th>ID</th><th>Fecha</th><th>Aspirante</th><th>Cargo</th><th>Prueba</th><th>Estado</th><th>Puntaje teórico</th><th>Dpto. Técnico</th><th>Etapa RH</th></tr>` +
+      f.map(s => `<tr class="clic" data-id="${esc(s.id)}"><td><b>${esc(s.id)}</b></td><td>${fecha(s.creada)}</td><td>${esc(s.aspirante)}<div class="tenue">${esc(s.documento)}</div></td><td>${esc(s.cargo)}</td><td>${esc(nombrePrueba(s.pruebaId))}</td><td>${pEstado(s.estado)}</td><td>${pPuntaje(s)}</td><td>${pTec(s)}</td><td>${s.etapaRH && s.etapaRH.length ? esc(s.etapaRH[s.etapaRH.length - 1].etapa) : s.puedeAvanzar ? `<span class="pill p-azul">Habilitado</span>` : `<span class="tenue">🔒</span>`}</td></tr>`).join("") + `</table>`
+      : `<p class="tenue">${SOLS.length ? "Ninguna solicitud coincide con el filtro." : "Aún no hay solicitudes."}${esRH() && !SOLS.length ? " Cree la primera en «Nueva solicitud»." : ""}</p>`;
+    $$("#tabla tr.clic").forEach(r => r.onclick = () => verSolicitud(r.dataset.id));
+  };
+  $("#fT").oninput = pinta; $("#fP").onchange = pinta; $("#fE").onchange = pinta;
+  $$(".kpi").forEach(k => k.onclick = () => { $("#fE").value = k.dataset.k; pinta(); });
+  $("#bCsv").onclick = () => {
+    const cab = ["ID", "Fecha", "Aspirante", "Documento", "Teléfono", "Cargo", "Prueba", "Estado", "Puntaje %", "Puntos", "Concepto técnico", "Etapa RH"];
+    const L = [cab.join("\t")].concat(SOLS.map(s => [s.id, (s.creada || "").slice(0, 10), s.aspirante, s.documento, s.telefono, s.cargo, nombrePrueba(s.pruebaId), s.estado, s.puntaje ? s.puntaje.pct : "", s.puntaje ? s.puntaje.total + "/" + s.puntaje.max : "", s.conceptoFinal ? s.conceptoFinal.resultado : s.estadoTecnico, s.etapaRH && s.etapaRH.length ? s.etapaRH[s.etapaRH.length - 1].etapa : ""].map(x => String(x == null ? "" : x).replace(/[\t\n]+/g, " ")).join("\t")));
+    copiar(L.join("\n"), $("#bCsv"));
+  };
+  pinta();
+}
+
+/* ===== nueva solicitud ===== */
+function vistaNueva() {
+  app.innerHTML = tabs() + `<div class="card" style="max-width:760px"><h2>Nueva solicitud de evaluación</h2>
+   <div class="g2"><label class="f">Nombre completo del aspirante<input type="text" id="nA" maxlength="80"></label>
+   <label class="f">Número de documento<input type="text" id="nD" inputmode="numeric" maxlength="20"></label>
+   <label class="f">Celular (WhatsApp)<input type="tel" id="nT" placeholder="3001234567" maxlength="15"></label>
+   <label class="f">Cargo al que se postula<select id="nC"><option value="">— elija —</option>${CARGOS.map(c => `<option>${c}</option>`).join("")}</select></label></div>
+   <label class="f">Prueba técnica asignada<select id="nP"><option value="">— elija —</option>${PRUEBAS.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)} (${p.minutos} min)</option>`).join("")}</select></label>
+   <div id="nInfo" class="tenue"></div><div id="nE" class="err"></div><button class="btn" id="nB">Crear solicitud</button></div><div id="nRes"></div>`;
+  enlazarTabs();
+  $("#nC").onchange = () => { const p = PRUEBAS.find(x => (x.cargos || []).indexOf($("#nC").value) >= 0); if (p) $("#nP").value = p.id; info(); };
+  const info = () => { const p = PRUEBAS.find(x => x.id === $("#nP").value); $("#nInfo").innerHTML = p ? `${p.preguntas} preguntas · ${p.minutos} minutos · aprueba con ${p.aprobacion}% · ${p.requierePractica ? "<b>requiere prueba práctica</b>" : "sin prueba práctica"}` : (($("#nC").value && !PRUEBAS.some(x => (x.cargos || []).indexOf($("#nC").value) >= 0)) ? "Este cargo aún no tiene prueba propia. Puede asignar otra o pedir al Departamento Técnico que la cargue." : ""); };
+  $("#nP").onchange = info;
+  $("#nB").onclick = async () => {
+    $("#nE").textContent = "";
+    if (!$("#nC").value || !$("#nP").value) { $("#nE").textContent = "Elija el cargo y la prueba."; return; }
+    $("#nB").disabled = true;
+    try {
+      const s = await q("solicitudCrear", { aspirante: $("#nA").value, documento: $("#nD").value, telefono: $("#nT").value, cargo: $("#nC").value, pruebaId: $("#nP").value });
+      $("#nRes").innerHTML = `<div class="card" style="max-width:760px"><div class="aviso ok">Solicitud <b>${esc(s.id)}</b> creada para ${esc(s.aspirante)}.</div>${bloqueInvitacion(s)}<div class="fila" style="margin-top:10px"><button class="btn sec" id="nVer">Ver solicitud</button><button class="btn sec" id="nOtra">Crear otra</button></div></div>`;
+      enlazarInvitacion(s); $("#nVer").onclick = () => verSolicitud(s.id); $("#nOtra").onclick = () => vistaNueva();
+      $$("#nA,#nD,#nT").forEach(i => i.value = "");
+    } catch (e) { $("#nE").textContent = e.message; }
+    $("#nB").disabled = false;
+  };
+}
+function mensajeWA(s) {
+  const p = PRUEBAS.find(x => x.id === s.pruebaId) || {};
+  return `Buen día, ${s.aspirante.split(" ")[0]}. Le escribimos de Recursos Humanos de INDIMON SAS.\n\nComo parte del proceso de selección para el cargo de *${s.cargo}*, lo invitamos a presentar la prueba técnica en línea.\n\n📋 Solicitud: ${s.id}\n📝 Prueba: ${p.nombre || s.pruebaId}\n⏱️ Duración: ${p.minutos || ""} minutos\n\n🔗 Su enlace personal (no lo comparta):\n${URL_PRUEBA(s.token)}\n\nAntes de empezar:\n• Use computador, tablet o celular con internet estable.\n• Tenga calculadora, lápiz y papel.\n• Busque un lugar tranquilo; una vez inicie, el tiempo corre.\n• La prueba es individual: sin ayuda de otras personas ni de internet.\n• Al terminar, sus respuestas quedan registradas automáticamente.\n\nCualquier duda, responda a este mensaje.\nINDIMON SAS`;
+}
+function waURL(s) { let t = String(s.telefono || "").replace(/\D/g, ""); if (t.length === 10 && t[0] === "3") t = "57" + t; return "https://wa.me/" + t + "?text=" + encodeURIComponent(mensajeWA(s)); }
+function bloqueInvitacion(s) {
+  return `<h3>Invitación al aspirante</h3><p class="tenue">Enlace personal de la prueba (solo sirve para esta solicitud):</p><div class="code" id="invLink">${esc(URL_PRUEBA(s.token))}</div>
+   <div class="fila" style="margin-top:8px"><a class="btn wa" id="invWa" href="${esc(waURL(s))}" target="_blank" rel="noopener">Enviar por WhatsApp</a><button class="btn sec" id="invCopL">Copiar enlace</button><button class="btn sec" id="invCopM">Copiar mensaje</button></div>
+   <p class="tenue">«Enviar por WhatsApp» abre WhatsApp con el mensaje listo; solo falta presionar enviar. La solicitud queda marcada como enviada.</p>`;
+}
+function enlazarInvitacion(s, alMarcar) {
+  $("#invCopL").onclick = () => copiar(URL_PRUEBA(s.token), $("#invCopL"));
+  $("#invCopM").onclick = () => copiar(mensajeWA(s), $("#invCopM"));
+  $("#invWa").onclick = async () => { try { await q("marcarEnviada", { id: s.id }); if (alMarcar) alMarcar(); } catch (e) { } };
+}
+
+/* ===== detalle ===== */
+async function verSolicitud(id) {
+  history.replaceState(null, "", "#" + id);
+  app.innerHTML = tabs() + `<div class="card"><p class="tenue">Cargando ${esc(id)}…</p></div>`; enlazarTabs();
+  let d; try { d = await q("solicitud", { id }); } catch (e) { app.innerHTML = tabs() + `<div class="card"><div class="aviso mal">${esc(e.message)}</div></div>`; enlazarTabs(); return; }
+  pintarDetalle(d);
+}
+function pasos(d) {
+  const teo = d.teorica && d.teorica.validada, cf = d.conceptoFinal, et = d.etapaRH || [];
+  const L = [["Creada", d.creada, true], ["Enviada", d.enviada, !!d.enviada], ["Iniciada", d.iniciada, !!d.iniciada], ["Entregada", d.finalizada, !!d.finalizada],
+    ["Teórica validada", teo && d.teorica.fecha, !!teo]];
+  if (d.requierePractica) L.push(["Práctica", d.practica && d.practica.registrada, !!d.practica]);
+  L.push(["Concepto técnico", cf && cf.fecha, !!cf], ["Selección RH", et.length ? et[et.length - 1].fecha : "", et.length > 0]);
+  const act = L.findIndex(x => !x[2]);
+  return `<div class="linea">${L.map((x, i) => `<div class="paso ${x[2] ? "hecho" : i === act ? "actual" : ""}">${x[0]}<small>${x[1] ? fecha(x[1]) : "&nbsp;"}</small></div>`).join("")}</div>`;
+}
+function firma(o, que) { return `<div class="firma">${que} por <b>${esc(o.evaluador || o.nombre || o.usuario)}</b>${o.cargoEvaluador ? " · " + esc(o.cargoEvaluador) : ""} · ${fecha(o.fecha || o.registrada, true)}</div>`; }
+function pintarDetalle(d) {
+  const r = d.resultado, m = r && r.meta;
+  let h = tabs() + `<div class="card"><div class="fila" style="justify-content:space-between"><div><h1 style="margin:0">${esc(d.id)} · ${esc(d.aspirante)}</h1>
+     <div class="tenue">Documento ${esc(d.documento)} · Cel. ${esc(d.telefono)} · ${esc(d.cargo)} · ${esc(d.prueba.nombre)}</div></div>
+     <div class="fila noimprimir"><button class="btn sec chico" onclick="window.print()">Imprimir informe</button><button class="btn sec chico" id="dVolver">← Volver</button></div></div>
+     ${pasos(d)}<div class="tenue">Creada por ${esc(d.creadaPor)} el ${fecha(d.creada, true)} · Estado: ${pEstado(d.estado)}</div></div>`;
+  if (esRH() && (d.estado === "Pendiente" || d.estado === "Enviada" || d.estado === "En proceso")) {
+    h += `<div class="card noimprimir">${bloqueInvitacion(d)}<div class="fila">${d.estado !== "En proceso" ? `<button class="btn sec chico" id="dNuevo">Generar enlace nuevo</button>` : ""}<button class="btn sec chico" id="dAnular" style="color:var(--rojo);border-color:var(--rojo)">Anular solicitud</button></div></div>`;
+  }
+  if (r) {
+    const pend = r.pendientesManual > 0;
+    h += `<div class="card"><h2>Resultado de la prueba teórica</h2><div class="g3">
+      <div class="dato">Puntaje<b>${r.total} / ${r.max} (${r.pct}%)</b></div>
+      <div class="dato">Aprobación requerida<b>${r.aprobacion}% · ${pend ? `<span class="pill p-am">${r.pendientesManual} ítem(s) abiertos por calificar</span>` : r.aprueba ? `<span class="pill p-ok">Aprueba</span>` : `<span class="pill p-mal">No aprueba</span>`}</b></div>
+      <div class="dato">Tiempo usado<b>${m ? m.minutosUsados + " min" : "—"}${m && m.fueraDeTiempo ? ` <span class="pill p-mal">fuera de tiempo</span>` : ""}</b></div>
+      <div class="dato">Salidas de la ventana<b>${m ? m.foco : "—"}${m && m.foco > 3 ? ` <span class="pill p-am">revisar</span>` : ""}</b></div>
+      <div class="dato">Declaración de trabajo individual<b>${m && m.declaracion ? "Aceptada" : "—"}</b></div>
+      <div class="dato">Ítems críticos SST fallados<b>${(r.critFallados || []).length}${(r.critFallados || []).length >= 2 ? ` <span class="pill p-mal">no avanza</span>` : ""}</b></div></div>
+      ${r.detalle === null ? `<p class="tenue">El detalle de respuestas lo revisa el Departamento Técnico.</p>` : ""}</div>`;
+  }
+  if (esTEC() && r && r.detalle) h += bloqueRevision(d);
+  if (d.teorica && d.teorica.validada && !esTEC()) h += `<div class="card"><h2>Validación de la prueba teórica</h2><p>${esc(d.teorica.concepto)}</p>${firma(d.teorica, "Validada")}</div>`;
+  if (d.estado === "Finalizada") h += bloquePractica(d);
+  if (d.estado === "Finalizada") h += bloqueConcepto(d);
+  h += bloqueRH(d);
+  if (d.historial && d.historial.length) h += `<div class="card"><h2>Otras evaluaciones del mismo documento</h2><table class="t"><tr><th>ID</th><th>Fecha</th><th>Cargo</th><th>Estado</th><th>Puntaje</th><th>Concepto</th></tr>${d.historial.map(x => `<tr class="clic" data-id="${esc(x.id)}"><td>${esc(x.id)}</td><td>${fecha(x.creada)}</td><td>${esc(x.cargo)}</td><td>${pEstado(x.estado)}</td><td>${pPuntaje(x)}</td><td>${pTec(x)}</td></tr>`).join("")}</table></div>`;
+  h += `<div class="card"><h2>Trazabilidad</h2><div class="tw"><table class="t"><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr>${(d.bitacora || []).map(b => `<tr><td>${fecha(b.fecha, true)}</td><td>${esc(b.usuario)}</td><td>${esc(b.accion)}</td><td>${esc(b.detalle)}</td></tr>`).join("")}</table></div></div>`;
+  app.innerHTML = h; enlazarTabs();
+  $("#dVolver").onclick = () => ir("sol");
+  $$("tr.clic[data-id]").forEach(t => t.onclick = () => verSolicitud(t.dataset.id));
+  if ($("#invWa")) enlazarInvitacion(d, () => { if (d.estado === "Pendiente") setTimeout(() => verSolicitud(d.id), 600); });
+  if ($("#dNuevo")) $("#dNuevo").onclick = () => confirmar("¿Generar un enlace nuevo?", "El enlace anterior dejará de funcionar. Úselo si el aspirante perdió el mensaje o se envió a otra persona.", async () => { try { await q("nuevoEnlace", { id: d.id }); verSolicitud(d.id); } catch (e) { alertaErr(e); } });
+  if ($("#dAnular")) $("#dAnular").onclick = () => confirmar("¿Anular la solicitud?", "El aspirante ya no podrá presentar la prueba con este enlace.", async () => { try { await q("anular", { id: d.id }); verSolicitud(d.id); } catch (e) { alertaErr(e); } }, "Anular");
+  enlazarRevision(d); enlazarPractica(d); enlazarConcepto(d); enlazarRH(d);
+}
+function alertaErr(e) { modal(`<h2>No se pudo completar</h2><div class="aviso mal">${esc(e.message)}</div><div style="text-align:right"><button class="btn" onclick="cerrarModal()">Cerrar</button></div>`); }
+
+/* --- revisión técnica de la teórica --- */
+function preguntas(d) {
+  const out = []; d.prueba.secciones.forEach(sec => sec.preguntas.forEach(qq => { let x = qq; if (qq.variantes) { const v = (d.variantes || {})[qq.id] || 0; x = Object.assign({}, qq, qq.variantes[v]); x.variante = v; } out.push(Object.assign({ seccion: sec.titulo }, x)); })); return out;
+}
+function bloqueRevision(d) {
+  const det = Object.fromEntries(d.resultado.detalle.map(x => [x.id, x])), R = d.respuestas || {}, cerrada = !!d.conceptoFinal, man = (d.teorica && d.teorica.manual) || {};
+  const marca = ok => ok ? `<span class="ok-t">✓</span>` : `<span class="mal-t">✗</span>`;
+  let sec = "", h = `<div class="card"><h2>Revisión técnica de la prueba teórica</h2><p class="tenue">Las preguntas cerradas se califican solas. Califique las abiertas y registre su concepto. ${d.prueba.reglaCritica ? "<br>⚑ " + esc(d.prueba.reglaCritica) : ""}</p>`;
+  preguntas(d).forEach((p, n) => {
+    const x = det[p.id] || {}, r = R[p.id];
+    if (p.seccion !== sec && d.prueba.secciones.length > 1) { sec = p.seccion; h += `<h3 style="color:var(--azul)">${esc(sec)}</h3>`; }
+    h += `<div class="qrev"><div class="enun">${n + 1}. ${esc(p.titulo ? p.titulo + ". " : "")}${esc(p.enunciado)} <span class="tenue">(${x.pts}/${x.max} pts)</span>${p.critico ? " ⚑" : ""}</div>`;
+    if (p.tipo === "unica") h += `<div>${marca(x.ok)} Respondió: <b>${r === undefined || r === null ? "(en blanco)" : esc(p.opciones[r])}</b>${x.ok ? "" : ` · Correcta: <b>${esc(p.opciones[p.clave])}</b>`}</div>`;
+    else if (p.tipo === "vf") h += `<table class="t" style="margin-top:4px"><tr><th>Ítem</th><th>Respondió</th><th>Correcto</th><th></th></tr>${p.items.map((it, i) => { const a = (r || [])[i]; return `<tr><td>${esc(it)}</td><td>${a === true ? "V" : a === false ? "F" : "—"}</td><td>${p.clave[i] ? "V" : "F"}</td><td>${marca(a === p.clave[i])}</td></tr>`; }).join("")}</table>`;
+    else if (p.tipo === "multiple") h += `<table class="t" style="margin-top:4px"><tr><th>Opción</th><th>Marcó</th><th>Correcto</th><th></th></tr>${p.opciones.map((o, i) => { const a = (r || []).indexOf(i) >= 0, k = p.clave.indexOf(i) >= 0; return `<tr><td>${esc(o)}</td><td>${a ? "Sí" : "—"}</td><td>${k ? "Sí" : "No"}</td><td>${marca(a === k)}</td></tr>`; }).join("")}</table>`;
+    else if (p.tipo === "emparejar") h += `<table class="t" style="margin-top:4px"><tr><th>Ítem</th><th>Respondió</th><th>Correcto</th><th></th></tr>${p.items.map((it, i) => { const a = (r || [])[i]; return `<tr><td>${it.imagen ? `<img src="${it.imagen}" style="max-width:90px">` : esc(it.texto)}</td><td>${a === undefined || a === null ? "—" : esc(p.opciones[a])}</td><td>${esc(p.opciones[p.clave[i]])}</td><td>${marca(a === p.clave[i])}</td></tr>`; }).join("")}</table>`;
+    else if (p.tipo === "numero") h += `${p.variante !== undefined ? `<div class="tenue">Variante ${p.variante + 1}</div>` : ""}<table class="t" style="margin-top:4px"><tr><th>Dato</th><th>Respondió</th><th>Correcto</th><th></th></tr>${p.campos.map(c => { const a = (r || {})[c.k]; const ok = (x.campos || []).find(z => z.k === c.k); return `<tr><td>${esc(c.etiqueta)}${c.solucion ? `<div class="tenue">${esc(c.solucion)}</div>` : ""}</td><td>${a === undefined || a === "" ? "—" : esc(a)}</td><td>${c.clave}${c.tol ? " ± " + c.tol : ""} ${esc(c.unidad || "")}</td><td>${marca(ok && ok.ok)}</td></tr>`; }).join("")}</table>`;
+    else if (p.tipo === "abierta") h += p.items.map((it, i) => { const k = p.id + "." + i, v = man[k]; return `<div style="margin:6px 0 10px">${it.imagen ? `<img src="${it.imagen}">` : ""}<div><b>${esc(it.etiqueta)}</b> — respuesta del aspirante:</div><div class="code" style="white-space:pre-wrap;font-family:inherit">${esc((r || [])[i] || "(en blanco)")}</div>${it.guia ? `<div class="tenue">Guía para calificar: ${esc(it.guia)}</div>` : ""}<label class="f" style="max-width:260px;margin-top:4px">Puntos (0 a ${it.puntos})<input type="number" min="0" max="${it.puntos}" step="0.5" data-man="${esc(k)}" value="${v === undefined ? "" : esc(v)}" ${cerrada ? "disabled" : ""}></label></div>`; }).join("");
+    if (p.nota_clave) h += `<div class="tenue">Nota sobre la clave: ${esc(p.nota_clave)}</div>`;
+    h += `</div>`;
+  });
+  const t = d.teorica || {};
+  h += `<h3>Concepto sobre la prueba teórica</h3>${t.validada ? firma(t, "Validada") : t.fecha ? `<div class="aviso">Borrador guardado por ${esc(t.evaluador)} · ${fecha(t.fecha, true)}</div>` : ""}
+    <textarea id="teoC" ${cerrada ? "disabled" : ""} placeholder="Ej.: domina conversiones y lectura de planos; debe reforzar normas de seguridad…">${esc(t.concepto || "")}</textarea>
+    <div id="teoE" class="err"></div>${cerrada ? `<p class="tenue">Cerrado: el concepto final ya fue emitido.</p>` : `<div class="fila" style="margin-top:8px"><button class="btn sec" id="teoG">Guardar borrador</button><button class="btn ok" id="teoV">${t.validada ? "Actualizar validación" : "Validar prueba teórica"}</button></div>`}</div>`;
+  return h;
+}
+function enlazarRevision(d) {
+  if (!$("#teoV")) return;
+  const env = async validar => {
+    const manual = {}; $$("[data-man]").forEach(i => { if (i.value !== "") manual[i.dataset.man] = Number(i.value); });
+    $("#teoE").textContent = ""; $("#teoV").disabled = $("#teoG").disabled = true;
+    try { const n = await q("validarTeorica", { id: d.id, manual, concepto: $("#teoC").value, validar }); pintarDetalle(n); }
+    catch (e) { $("#teoE").textContent = e.message; $("#teoV").disabled = $("#teoG").disabled = false; }
+  };
+  $("#teoG").onclick = () => env(false);
+  $("#teoV").onclick = () => env(true);
+}
+
+/* --- prueba práctica --- */
+const DESEMP = ["Excelente", "Bueno", "Aceptable", "Deficiente", "No aplica"];
+function bloquePractica(d) {
+  const p = d.practica, req = d.requierePractica, cerrada = !!d.conceptoFinal;
+  if (!esTEC()) return p ? `<div class="card"><h2>Prueba práctica</h2>${resumenPractica(p)}</div>` : (req ? `<div class="card"><h2>Prueba práctica</h2><p class="tenue">Pendiente: el Departamento Técnico debe registrarla.</p></div>` : "");
+  if (!req && !p && !d.verPractica) return `<div class="card noimprimir"><h2>Prueba práctica</h2><p class="tenue">Esta prueba no exige parte práctica.</p><button class="btn sec" id="prAbrir">Registrar una prueba práctica de todas formas</button></div>`;
+  if (p && (cerrada || !d.editarPractica)) return `<div class="card"><h2>Prueba práctica</h2>${resumenPractica(p)}${cerrada ? "" : `<button class="btn sec noimprimir" id="prEditar">Editar registro</button>`}</div>`;
+  const v = p || { evaluador: SES.usuario.nombre, cargoEvaluador: SES.usuario.cargo, fecha: new Date().toISOString().slice(0, 10), actividad: d.prueba.practicaSugerida || "", criterios: [{ criterio: "" }, { criterio: "" }, { criterio: "" }] };
+  return `<div class="card"><h2>Registro de la prueba práctica</h2><div class="g3">
+    <label class="f">Evaluador responsable<input type="text" id="prN" value="${esc(v.evaluador)}"></label>
+    <label class="f">Cargo del evaluador<input type="text" id="prC" value="${esc(v.cargoEvaluador)}"></label>
+    <label class="f">Fecha de realización<input type="date" id="prF" value="${esc(v.fecha)}"></label></div>
+    <label class="f">Descripción de la actividad práctica realizada<textarea id="prA">${esc(v.actividad)}</textarea></label>
+    <h3>Criterios de evaluación y desempeño observado</h3><div class="tw"><table class="t" id="prT"><tr><th>Criterio</th><th style="width:150px">Desempeño</th><th>Observación</th><th></th></tr></table></div>
+    <button class="btn sec chico" id="prMas" style="margin:6px 0 10px">+ Agregar criterio</button>
+    <label class="f">Observaciones y oportunidades de mejora<textarea id="prO">${esc(v.observaciones || "")}</textarea></label>
+    <label class="f">Concepto técnico de la prueba práctica<textarea id="prK">${esc(v.concepto || "")}</textarea></label>
+    <div class="g2"><label class="f">Resultado<select id="prR"><option value="">— elija —</option><option${v.resultado === "Aprobada" ? " selected" : ""}>Aprobada</option><option${v.resultado === "No aprobada" ? " selected" : ""}>No aprobada</option></select></label>
+    <label class="f">Puntaje (opcional, 0 a 100)<input type="number" id="prP" min="0" max="100" value="${esc(v.puntaje === undefined ? "" : v.puntaje)}"></label></div>
+    <div id="prE" class="err"></div><button class="btn ok" id="prG">Guardar prueba práctica</button></div>`;
+}
+function resumenPractica(p) {
+  return `<div class="g3"><div class="dato">Evaluador<b>${esc(p.evaluador)}</b></div><div class="dato">Cargo<b>${esc(p.cargoEvaluador)}</b></div><div class="dato">Fecha<b>${esc(p.fecha)}</b></div></div>
+   <p><b>Actividad:</b> ${esc(p.actividad)}</p>${p.criterios && p.criterios.length ? `<table class="t"><tr><th>Criterio</th><th>Desempeño</th><th>Observación</th></tr>${p.criterios.map(c => `<tr><td>${esc(c.criterio)}</td><td>${esc(c.desempeno)}</td><td>${esc(c.obs)}</td></tr>`).join("")}</table>` : ""}
+   <p><b>Observaciones y oportunidades de mejora:</b> ${esc(p.observaciones || "—")}</p><p><b>Concepto:</b> ${esc(p.concepto)}</p>
+   <p><b>Resultado:</b> <span class="pill ${p.resultado === "Aprobada" ? "p-ok" : "p-mal"}">${esc(p.resultado)}</span>${p.puntaje !== "" && p.puntaje != null ? ` · Puntaje ${esc(p.puntaje)}/100` : ""}</p>
+   <div class="firma">Registrada por <b>${esc(p.evaluador)}</b> (usuario ${esc(p.usuario)}) · ${fecha(p.registrada, true)}</div>`;
+}
+function enlazarPractica(d) {
+  if ($("#prAbrir")) $("#prAbrir").onclick = () => { d.verPractica = true; pintarDetalle(d); };
+  if ($("#prEditar")) $("#prEditar").onclick = () => { d.editarPractica = true; pintarDetalle(d); };
+  if (!$("#prG")) return;
+  const fila = (c = {}) => { const tr = document.createElement("tr"); tr.innerHTML = `<td><input type="text" class="cC" value="${esc(c.criterio || "")}" placeholder="Ej.: Trazado y corte"></td><td><select class="cD"><option value=""></option>${DESEMP.map(x => `<option${c.desempeno === x ? " selected" : ""}>${x}</option>`).join("")}</select></td><td><input type="text" class="cO" value="${esc(c.obs || "")}"></td><td><button class="btn sec chico">✕</button></td>`; $("button", tr).onclick = () => tr.remove(); $("#prT").appendChild(tr); };
+  ((d.practica && d.practica.criterios) || [{}, {}, {}]).forEach(fila);
+  $("#prMas").onclick = () => fila();
+  $("#prG").onclick = async () => {
+    const pr = { evaluador: $("#prN").value, cargoEvaluador: $("#prC").value, fecha: $("#prF").value, actividad: $("#prA").value, observaciones: $("#prO").value, concepto: $("#prK").value, resultado: $("#prR").value, puntaje: $("#prP").value,
+      criterios: $$("#prT tr").slice(1).map(tr => ({ criterio: $(".cC", tr).value, desempeno: $(".cD", tr).value, obs: $(".cO", tr).value })).filter(c => c.criterio.trim()) };
+    $("#prG").disabled = true; $("#prE").textContent = "";
+    try { const n = await q("registrarPractica", { id: d.id, practica: pr }); pintarDetalle(n); } catch (e) { $("#prE").textContent = e.message; $("#prG").disabled = false; }
+  };
+}
+
+/* --- concepto final --- */
+function bloqueConcepto(d) {
+  const cf = d.conceptoFinal;
+  if (cf) return `<div class="card"><h2>Concepto técnico final</h2><p><span class="pill ${cf.resultado === "No apto" ? "p-mal" : "p-ok"}" style="font-size:15px">${esc(cf.resultado)}</span></p><p>${esc(cf.observaciones)}</p>${firma(cf, "Emitido y autorizado")}</div>`;
+  if (!esTEC()) return "";
+  const teo = d.teorica && d.teorica.validada, falta = [];
+  if (!teo) falta.push("validar la prueba teórica");
+  if (d.requierePractica && !d.practica) falta.push("registrar la prueba práctica");
+  return `<div class="card"><h2>Concepto técnico final</h2>${falta.length ? `<div class="bloqueo">Para emitir el concepto final falta: <b>${falta.join(" y ")}</b>.</div>` : `
+    <p class="tenue">Resume la teórica${d.requierePractica ? " y la práctica" : ""}. Al emitirlo, Recursos Humanos queda habilitado para continuar el proceso. No se puede modificar después.</p>
+    <label class="f">Concepto sobre la idoneidad del candidato<select id="cfR"><option value="">— elija —</option><option>Apto</option><option>Apto con observaciones</option><option>No apto</option></select></label>
+    <label class="f">Observaciones generales<textarea id="cfO"></textarea></label><div id="cfE" class="err"></div><button class="btn" id="cfB">Emitir concepto final</button>`}</div>`;
+}
+function enlazarConcepto(d) {
+  if (!$("#cfB")) return;
+  $("#cfB").onclick = () => confirmar("¿Emitir el concepto técnico final?", "Quedará registrado con su nombre y no se podrá modificar.", async () => {
+    try { const n = await q("conceptoFinal", { id: d.id, resultado: $("#cfR").value, observaciones: $("#cfO").value }); pintarDetalle(n); } catch (e) { $("#cfE").textContent = e.message; }
+  }, "Emitir");
+}
+
+/* --- etapa de selección RH --- */
+function bloqueRH(d) {
+  const et = d.etapaRH || [];
+  let h = `<div class="card"><h2>Proceso de selección (Recursos Humanos)</h2>`;
+  if (!d.conceptoFinal) h += `<div class="bloqueo">🔒 <b>Bloqueado.</b> Recursos Humanos puede consultar los resultados, pero no puede avanzar a la siguiente etapa hasta que el Departamento Técnico valide la prueba teórica${d.requierePractica ? ", registre la prueba práctica" : ""} y emita el concepto final.</div>`;
+  else if (esRH()) h += `<div class="g2"><label class="f">Siguiente etapa<select id="rhE"><option value="">— elija —</option><option>Entrevista</option><option>Exámenes médicos</option><option>Contratado</option><option>No continúa</option></select></label><label class="f">Nota<input type="text" id="rhN" maxlength="200"></label></div><div id="rhErr" class="err"></div><button class="btn" id="rhB">Registrar etapa</button>`;
+  else h += `<p class="tenue">Habilitado para Recursos Humanos.</p>`;
+  if (et.length) h += `<table class="t" style="margin-top:10px"><tr><th>Fecha</th><th>Etapa</th><th>Nota</th><th>Registró</th></tr>${et.map(e => `<tr><td>${fecha(e.fecha, true)}</td><td>${esc(e.etapa)}</td><td>${esc(e.nota)}</td><td>${esc(e.nombre)}</td></tr>`).join("")}</table>`;
+  return h + `</div>`;
+}
+function enlazarRH(d) {
+  if (!$("#rhB")) return;
+  $("#rhB").onclick = async () => { $("#rhB").disabled = true; try { const n = await q("etapaRH", { id: d.id, etapa: $("#rhE").value, nota: $("#rhN").value }); pintarDetalle(n); } catch (e) { $("#rhErr").textContent = e.message; $("#rhB").disabled = false; } };
+}
+
+/* ===== pruebas ===== */
+function vistaPruebas() {
+  app.innerHTML = tabs() + `<div class="card"><h2>Pruebas por cargo</h2><div class="tw"><table class="t"><tr><th>Prueba</th><th>Cargos</th><th>Preguntas</th><th>Tiempo</th><th>Aprueba con</th><th>Práctica</th><th>Versión</th><th></th></tr>${PRUEBAS.map(p => `<tr><td><b>${esc(p.nombre)}</b><div class="tenue">${esc(p.id)}</div></td><td>${esc((p.cargos || []).join(", "))}</td><td>${p.preguntas} (${p.puntos} pts)</td><td>${p.minutos} min</td><td>${p.aprobacion}%</td><td>${p.requierePractica ? "Sí" : "No"}</td><td>v${esc(p.version)} · ${fecha(p.cargada)}</td><td>${esTEC() ? `<button class="btn sec chico" data-ver="${esc(p.id)}">Ver con claves</button>` : ""}</td></tr>`).join("")}</table></div>
+   ${PRUEBAS.length ? "" : `<p class="tenue">No hay pruebas cargadas.</p>`}</div>
+   ${esADM() ? `<div class="card noimprimir"><h2>Cargar o actualizar una prueba</h2><p class="tenue">Seleccione el archivo .json de la prueba. Si ya existe una con el mismo código, se reemplaza; las solicitudes ya creadas conservan sus respuestas.</p><input type="file" id="pF" accept=".json,application/json"><div id="pE" class="err"></div></div>` : ""}`;
+  enlazarTabs();
+  $$("[data-ver]").forEach(b => b.onclick = async () => { b.disabled = true; try { verClaves(await q("pruebaCompleta", { id: b.dataset.ver })); } catch (e) { alertaErr(e); } b.disabled = false; });
+  if ($("#pF")) $("#pF").onchange = async ev => {
+    const f = ev.target.files[0]; if (!f) return; $("#pE").textContent = "Cargando…";
+    try { const txt = await f.text(); JSON.parse(txt); await q("pruebaCargar", { prueba: txt }, 90000); PRUEBAS = await q("pruebas"); vistaPruebas(); }
+    catch (e) { $("#pE").textContent = e.message; }
+  };
+}
+function verClaves(t) {
+  let n = 0;
+  const h = `<div class="fila" style="justify-content:space-between"><h2 style="margin:0">${esc(t.nombre)}</h2><button class="btn" onclick="cerrarModal()">Cerrar</button></div><p class="tenue">Confidencial: incluye las respuestas correctas. Aprueba con ${t.aprobacion}%.</p>` +
+    t.secciones.map(s => `<h3 style="color:var(--azul)">${esc(s.titulo)} · ${s.minutos} min</h3>` + s.preguntas.map(p => {
+      n++; const x = p.variantes ? Object.assign({}, p, p.variantes[0]) : p;
+      let k = "";
+      if (x.tipo === "unica") k = esc(x.opciones[x.clave]);
+      else if (x.tipo === "vf") k = x.items.map((it, i) => `${esc(it)}: <b>${x.clave[i] ? "V" : "F"}</b>`).join(" · ");
+      else if (x.tipo === "multiple") k = x.clave.map(i => esc(x.opciones[i])).join(", ");
+      else if (x.tipo === "emparejar") k = x.items.map((it, i) => `${it.texto ? esc(it.texto) : "Símb. " + (i + 1)} → ${esc(x.opciones[x.clave[i]])}`).join(" · ");
+      else if (x.tipo === "numero") k = x.campos.map(c => `${esc(c.etiqueta)}: <b>${c.clave}</b> ${esc(c.unidad || "")}`).join(" · ") + (p.variantes ? ` <span class="tenue">(variante 1 de ${p.variantes.length})</span>` : "");
+      else if (x.tipo === "abierta") k = "Calificación manual. " + x.items.map(it => `${esc(it.etiqueta)}: ${esc(it.guia || "")}`).join(" · ");
+      return `<div class="qrev"><div class="enun">${n}. ${esc(x.titulo ? x.titulo + ". " : "")}${esc(x.enunciado)}${p.critico ? " ⚑" : ""}</div><div>Clave: ${k}</div>${x.nota_clave ? `<div class="aviso">${esc(x.nota_clave)}</div>` : ""}</div>`;
+    }).join("")).join("");
+  modal(h, true);
+}
+
+/* ===== usuarios ===== */
+async function vistaUsuarios() {
+  app.innerHTML = tabs() + `<div class="card"><p class="tenue">Cargando…</p></div>`; enlazarTabs();
+  let U; try { U = await q("usuarios"); } catch (e) { return alertaErr(e); }
+  app.innerHTML = tabs() + `<div class="card"><h2>Usuarios del portal</h2><div class="tw"><table class="t"><tr><th>Usuario</th><th>Nombre</th><th>Cargo</th><th>Rol</th><th>Estado</th><th></th></tr>${U.map(u => `<tr><td><b>${esc(u.usuario)}</b></td><td>${esc(u.nombre)}</td><td>${esc(u.cargo)}</td><td>${esc(ROL[u.rol])}</td><td>${u.activo ? (u.debeCambiar ? `<span class="pill p-am">Clave temporal</span>` : `<span class="pill p-ok">Activo</span>`) : `<span class="pill p-mal">Inactivo</span>`}</td><td><button class="btn sec chico" data-u="${esc(u.usuario)}">Editar</button></td></tr>`).join("")}</table></div>
+   <button class="btn" id="uN" style="margin-top:10px">+ Nuevo usuario</button></div>
+   <div class="card"><h2>Roles</h2><ul><li><b>Recursos Humanos:</b> crea solicitudes, envía invitaciones por WhatsApp, consulta resultados y registra las etapas de selección (solo después del concepto técnico).</li><li><b>Departamento Técnico:</b> revisa y valida la prueba teórica, registra la prueba práctica y emite el concepto final. Ve las claves de las pruebas.</li><li><b>Administrador:</b> todo lo anterior, más usuarios, carga de pruebas y bitácora.</li></ul></div>`;
+  enlazarTabs();
+  const form = u => {
+    const n = !u; u = u || { rol: "RH", activo: true };
+    const c = modal(`<h2>${n ? "Nuevo usuario" : "Editar " + esc(u.usuario)}</h2><div class="g2">
+      <label class="f">Usuario<input type="text" id="fu" value="${esc(u.usuario || "")}" ${n ? "" : "disabled"} placeholder="nombre.apellido" autocapitalize="none"></label>
+      <label class="f">Rol<select id="fr">${Object.entries(ROL).map(([k, v]) => `<option value="${k}"${u.rol === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>
+      <label class="f">Nombre completo<input type="text" id="fn" value="${esc(u.nombre || "")}"></label>
+      <label class="f">Cargo<input type="text" id="fc" value="${esc(u.cargo || "")}" placeholder="Ej.: Supervisor, Ingeniero, Analista de Talento Humano"></label></div>
+      ${n ? "" : `<label class="f" style="font-weight:500"><input type="checkbox" id="fa" ${u.activo ? "checked" : ""}> Usuario activo</label><label class="f" style="font-weight:500"><input type="checkbox" id="fx"> Restablecer clave (genera una clave temporal)</label>`}
+      <div id="fe" class="err"></div><div class="fila" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cancelar</button><button class="btn" id="fg">Guardar</button></div>`);
+    $("#fg", c).onclick = async () => {
+      try {
+        const r = await q("usuarioGuardar", { usuario: $("#fu", c).value, rol: $("#fr", c).value, nombre: $("#fn", c).value, cargo: $("#fc", c).value, activo: n ? true : $("#fa", c).checked, restablecer: !n && $("#fx", c).checked });
+        if (r.claveTemporal) modal(`<h2>Clave temporal</h2><p>Entregue estos datos a la persona. Deberá cambiar la clave al ingresar.</p><div class="code">Portal: ${esc(location.href.split("#")[0])}<br>Usuario: <b>${esc(r.usuario)}</b><br>Clave temporal: <b>${esc(r.claveTemporal)}</b></div><div class="fila" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="okT">Listo</button></div>`), $("#okT").onclick = () => { cerrarModal(); vistaUsuarios(); };
+        else { cerrarModal(); vistaUsuarios(); }
+      } catch (e) { $("#fe", c).textContent = e.message; }
+    };
+  };
+  $("#uN").onclick = () => form(null);
+  $$("[data-u]").forEach(b => b.onclick = () => form(U.find(x => x.usuario === b.dataset.u)));
+}
+async function vistaBitacora() {
+  app.innerHTML = tabs() + `<div class="card"><p class="tenue">Cargando…</p></div>`; enlazarTabs();
+  let B; try { B = await q("bitacora"); } catch (e) { return alertaErr(e); }
+  app.innerHTML = tabs() + `<div class="card"><h2>Bitácora (últimos 500 movimientos)</h2><div class="tw"><table class="t"><tr><th>Fecha</th><th>Usuario</th><th>Solicitud</th><th>Acción</th><th>Detalle</th></tr>${B.map(b => `<tr><td>${fecha(b.fecha, true)}</td><td>${esc(b.usuario)}</td><td>${b.solicitud ? `<a href="#${esc(b.solicitud)}" data-id="${esc(b.solicitud)}">${esc(b.solicitud)}</a>` : ""}</td><td>${esc(b.accion)}</td><td>${esc(b.detalle)}</td></tr>`).join("")}</table></div></div>`;
+  enlazarTabs(); $$("a[data-id]").forEach(a => a.onclick = ev => { ev.preventDefault(); verSolicitud(a.dataset.id); });
+}
+
+/* ===== inicio ===== */
+SES = ls(SK);
+if (SES && SES.token) { setHdr(); SES.usuario.debeCambiar ? pantallaClave(true) : arrancar(); } else pantallaLogin();
+</script>
+</body>
+</html>
