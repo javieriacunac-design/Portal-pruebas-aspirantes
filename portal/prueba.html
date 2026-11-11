@@ -23,12 +23,18 @@
 .abi{padding:8px 0;border-top:1px solid var(--gris)}.abi img{max-width:260px;border:1px solid var(--linea);border-radius:8px;background:#fff;display:block;margin:6px 0}
 .barra{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--linea);padding:10px 18px;display:flex;gap:12px;align-items:center;justify-content:space-between;z-index:15}
 table.t.anexo td,table.t.anexo th{text-align:center}
+#wm{position:fixed;inset:0;z-index:9000;pointer-events:none;background-repeat:repeat}
+#shield{position:fixed;inset:0;z-index:9999;background:#0B1E3F;color:#fff;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;font-size:18px;line-height:1.5}
+#shield.on{display:flex}#shield .sb{max-width:480px}#shield .btn{margin-top:18px}
+@media print{html,body{display:none!important}}
 </style>
 <script>document.write('<script src="config.js?t=' + Date.now() + '"><\/script>');</script>
 <script src="comun.js"></script>
 </head>
 <body>
 <header class="top"><span class="marca">INDIMON SAS</span><span class="sec" id="hSec">Prueba técnica</span><button class="btn claro oculto" id="bAnexo">Hoja de datos</button><span class="reloj oculto" id="reloj">--:--</span></header>
+<div id="wm"></div>
+<div id="shield"><div class="sb"><div id="shT"></div><button class="btn" id="shBtn">Volver a la prueba</button></div></div>
 <main class="angosto" id="app"><div class="card"><p class="tenue">Cargando su prueba…</p></div></main>
 <script>
 "use strict";
@@ -38,7 +44,7 @@ let INFO = null, P = null, E = null, tickH = null, enPrueba = false;
 const app = $("#app");
 
 function guardar() { ls(LK, E); }
-function hdr(t, reloj, anexo) { $("#hSec").textContent = t; $("#reloj").classList.toggle("oculto", !reloj); $("#bAnexo").classList.toggle("oculto", !anexo || !P || !P.anexo); }
+function hdr(t, reloj, anexo) { marcaAgua(); $("#hSec").textContent = t; $("#reloj").classList.toggle("oculto", !reloj); $("#bAnexo").classList.toggle("oculto", !anexo || !P || !P.anexo); }
 function fmt(ms) { ms = Math.max(0, ms); const s = Math.ceil(ms / 1000), m = Math.floor(s / 60); return String(m).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
 function logoHTML() { return `<img src="img/logo.jpg" alt="INDIMON" class="logo">`; }
 $("#bAnexo").onclick = () => modal(`<h2>Hoja de datos</h2>` + P.anexo.tablas.map(t => `<h3>${esc(t.title)}</h3><div class="tw"><table class="t anexo"><tr>${t.head.map(h => `<th>${esc(h)}</th>`).join("")}</tr>${t.rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`).join("") + `<p class="tenue">${esc(P.anexo.nota || "")}</p><div style="text-align:right"><button class="btn" onclick="cerrarModal()">Cerrar</button></div>`, true);
@@ -46,9 +52,50 @@ function verImg(src) { modal(`<div style="text-align:right;margin-bottom:6px"><b
 
 /* antiayudas */
 ["copy", "cut", "paste", "contextmenu", "dragstart"].forEach(ev => document.addEventListener(ev, e => { if (enPrueba && !e.target.closest("[data-libre]")) e.preventDefault(); }));
-function salio() { if (!enPrueba || !E || E.fase !== "seccion") return; E.foco = (E.foco || 0) + 1; guardar(); }
-document.addEventListener("visibilitychange", () => { if (document.hidden) salio(); });
-window.addEventListener("blur", salio);
+const MAX_SAL = 3, TXT_SAL = { fuera: "Salió de la ventana de la prueba", pantalla: "Salió del modo pantalla completa", captura: "Se detectó un intento de captura de pantalla", impresion: "Se intentó imprimir o guardar la página" };
+let ultSal = 0, estuvoPC = false;
+function marcaAgua() {
+  const el = $("#wm"); if (!el) return;
+  if (!enPrueba || !INFO) { el.style.backgroundImage = "none"; return; }
+  const t = (INFO.aspirante + " · " + INFO.documento).replace(/[<>&"']/g, "");
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="380" height="190"><text x="10" y="110" transform="rotate(-24 190 95)" font-family="Arial,sans-serif" font-size="15" fill="#0B1E3F" fill-opacity="0.10">' + t + ' · INDIMON</text></svg>';
+  el.style.backgroundImage = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '")';
+}
+function escudo() {
+  const quedan = MAX_SAL - (E.foco || 0);
+  $("#shT").innerHTML = '<b style="font-size:22px">Advertencia ' + E.foco + ' de ' + MAX_SAL + '</b><br>' + TXT_SAL[E.ultSal || "fuera"] + '.<br>Si vuelve a ocurrir ' + quedan + (quedan === 1 ? ' vez más' : ' veces más') + ', la prueba termina y se envía lo que lleve respondido.';
+  $("#shield").classList.add("on");
+}
+function salio(tipo) {
+  if (!enPrueba || !E || E.fase !== "seccion") return;
+  const ahora = Date.now(); if (ahora - ultSal < 2000) return; ultSal = ahora;
+  E.foco = (E.foco || 0) + 1; E.ultSal = tipo || "fuera"; guardar();
+  if (E.foco >= MAX_SAL) terminarForzada(); else escudo();
+}
+function terminarForzada() {
+  if (!E || E.fase !== "seccion") return;
+  clearInterval(tickH); cerrarModal(); estuvoPC = false;
+  const s = P.secciones[E.sec]; E.tiempos[s.id] = Math.min(Date.now() - E.inicioSec[s.id], s.minutos * 60000);
+  E.terminada = true; E.fase = "enviando"; guardar();
+  $("#shield").classList.remove("on");
+  try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { }
+  pantallaEnvio();
+}
+function fuera(tipo) { if (!enPrueba || !E || E.fase !== "seccion") return; setTimeout(() => { if (document.hidden || !document.hasFocus()) salio(tipo); }, 250); }
+function captura() { try { navigator.clipboard && navigator.clipboard.writeText(" ").catch(() => { }); } catch (e) { } salio("captura"); }
+document.addEventListener("visibilitychange", () => { if (document.hidden) fuera("fuera"); });
+window.addEventListener("blur", () => fuera("fuera"));
+document.addEventListener("fullscreenchange", () => { if (document.fullscreenElement) estuvoPC = true; else if (estuvoPC) { estuvoPC = false; salio("pantalla"); } });
+document.addEventListener("keydown", e => {
+  if (!enPrueba) return;
+  const k = String(e.key || "").toLowerCase(), c = e.code;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (k === "p" || k === "s" || k === "u")) { e.preventDefault(); if (k !== "u") salio("impresion"); return; }
+  if (k === "printscreen" || c === "PrintScreen") { captura(); return; }
+  if (e.metaKey && e.shiftKey && ["Digit3", "Digit4", "Digit5", "KeyS"].includes(c)) captura();
+});
+document.addEventListener("keyup", e => { if (enPrueba && (e.key === "PrintScreen" || e.code === "PrintScreen")) captura(); });
+window.addEventListener("beforeprint", () => { if (enPrueba) salio("impresion"); });
+$("#shBtn").onclick = () => { $("#shield").classList.remove("on"); try { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => { }); } catch (e) { } };
 
 async function iniciar() {
   if (!T) return error("El enlace está incompleto. Ábralo tal como le llegó por WhatsApp.");
@@ -77,7 +124,8 @@ function pantallaInicio() {
    <li>Tenga a mano calculadora, lápiz y papel para hacer cálculos.</li>
    <li>Cuando el tiempo termina, la prueba se entrega sola con lo que haya respondido.</li>
    <li>No cierre esta página mientras presenta la prueba. Si se le cierra, abra de nuevo el mismo enlace: el tiempo sigue corriendo.</li>
-   <li>Salir de la página o cambiar de aplicación queda registrado.</li>
+   <li><b>Límite de salidas:</b> cambiar de pestaña o aplicación, salir de pantalla completa o intentar capturar o imprimir la pantalla cuenta como una advertencia. <b>A la tercera, la prueba termina</b> y se envía lo que haya respondido hasta ese momento. En el celular active «No molestar» antes de empezar.</li>
+   <li>La pantalla lleva su nombre y documento como marca de agua. Está prohibido fotografiar o copiar las preguntas.</li>
    ${P.anexo ? "<li>Puede consultar la <b>Hoja de datos</b> (botón de arriba) durante la prueba.</li>" : ""}
    </ul>
    <label class="f" style="display:flex;gap:8px;align-items:flex-start;font-weight:500"><input type="checkbox" id="dec" style="margin-top:4px"><span>Declaro que soy <b>${esc(INFO.aspirante)}</b> y que presento esta prueba solo, sin ayuda de otras personas, de inteligencia artificial, de apuntes ni de internet.</span></label>
@@ -184,10 +232,10 @@ let intentos = 0, reintH = null;
 async function pantallaEnvio() {
   enPrueba = false; clearInterval(tickH); hdr("Entregando prueba", false, false);
   clearTimeout(reintH); intentos++;
-  app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba terminada</h1><div class="aviso"><b>Registrando sus respuestas…</b> No cierre esta página.${intentos > 1 ? ` (intento ${intentos})` : ""}</div></div>`;
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba terminada</h1>${E.terminada ? `<div class="aviso mal"><b>La prueba se dio por finalizada</b> porque salió de la ventana 3 veces. Se envía lo que había respondido hasta ese momento.</div>` : ""}<div class="aviso"><b>Registrando sus respuestas…</b> No cierre esta página.${intentos > 1 ? ` (intento ${intentos})` : ""}</div></div>`;
   try {
-    await api("candEntregar", { t: T, respuestas: E.resp, tiempos: E.tiempos, foco: E.foco || 0, declaracion: !!E.declaracion, dispositivo: navigator.userAgent.slice(0, 120) });
-    E = { fase: "fin" }; guardar(); pantallaFin();
+    await api("candEntregar", { t: T, respuestas: E.resp, tiempos: E.tiempos, foco: E.foco || 0, declaracion: !!E.declaracion, dispositivo: (E.terminada ? "[TERMINADA POR SALIDAS] " : "") + navigator.userAgent.slice(0, 90) });
+    E = { fase: "fin", terminada: !!E.terminada }; guardar(); pantallaFin();
   } catch (e) {
     if (e.servidor && /no válido|anulada/i.test(e.message)) return error(e.message);
     app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba terminada</h1><div class="aviso"><b>No se pudo registrar todavía.</b> Revise su conexión a internet. Se intentará de nuevo automáticamente en 10 segundos. <b>No cierre esta página.</b></div><button class="btn" id="bRe">Reintentar ahora</button></div>`;
@@ -196,7 +244,7 @@ async function pantallaEnvio() {
 }
 function pantallaFin() {
   enPrueba = false; hdr("Prueba entregada", false, false);
-  app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba entregada</h1><div class="aviso ok" style="font-size:16px"><b>✓ Sus respuestas quedaron registradas.</b> Ya puede cerrar esta página.</div><p class="tenue">Recursos Humanos de INDIMON se comunicará con usted para informarle los siguientes pasos del proceso.</p></div>`;
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba entregada</h1>${E && E.terminada ? `<div class="aviso mal"><b>La prueba se dio por finalizada</b> porque salió de la ventana 3 veces; se registró lo respondido hasta ese momento.</div>` : ""}<div class="aviso ok" style="font-size:16px"><b>✓ Sus respuestas quedaron registradas.</b> Ya puede cerrar esta página.</div><p class="tenue">Recursos Humanos de INDIMON se comunicará con usted para informarle los siguientes pasos del proceso.</p></div>`;
 }
 iniciar();
 </script>

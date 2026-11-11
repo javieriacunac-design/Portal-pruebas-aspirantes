@@ -239,7 +239,7 @@ function pintarDetalle(d) {
       <div class="dato">Puntaje<b>${r.total} / ${r.max} (${r.pct}%)</b></div>
       <div class="dato">Aprobación requerida<b>${r.aprobacion}% · ${pend ? `<span class="pill p-am">${r.pendientesManual} ítem(s) abiertos por calificar</span>` : r.aprueba ? `<span class="pill p-ok">Aprueba</span>` : `<span class="pill p-mal">No aprueba</span>`}</b></div>
       <div class="dato">Tiempo usado<b>${m ? m.minutosUsados + " min" : "—"}${m && m.fueraDeTiempo ? ` <span class="pill p-mal">fuera de tiempo</span>` : ""}</b></div>
-      <div class="dato">Salidas de la ventana<b>${m ? m.foco : "—"}${m && m.foco > 3 ? ` <span class="pill p-am">revisar</span>` : ""}</b></div>
+      <div class="dato">Salidas de la ventana<b>${m ? m.foco : "—"}${m && /^\[TERMINADA/.test(m.dispositivo || "") ? ` <span class="pill p-mal">prueba terminada por salidas</span>` : (m && m.foco >= 2 ? ` <span class="pill p-am">revisar</span>` : "")}</b></div>
       <div class="dato">Declaración de trabajo individual<b>${m && m.declaracion ? "Aceptada" : "—"}</b></div>
       <div class="dato">Ítems críticos SST fallados<b>${(r.critFallados || []).length}${(r.critFallados || []).length >= 2 ? ` <span class="pill p-mal">no avanza</span>` : ""}</b></div></div>
       ${r.detalle === null ? `<p class="tenue">El detalle de respuestas lo revisa el Departamento Técnico.</p>` : ""}</div>`;

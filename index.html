@@ -78,6 +78,13 @@ details summary{cursor:pointer;margin-top:6px}
 .big{font-size:42px;font-weight:800;color:var(--blue);line-height:1}
 .score{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
 .ok-t{color:var(--ok);font-weight:700}.bad-t{color:var(--red);font-weight:700}
+
+@media print{html,body{display:none!important}}
+#wm{position:fixed;inset:0;z-index:9000;pointer-events:none;background-repeat:repeat}
+#shield{position:fixed;inset:0;z-index:9999;background:#0B1E3F;color:#fff;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;font-size:18px;line-height:1.5}
+#shield.on{display:flex}
+#shield .sb{max-width:480px}
+#shield .btn{margin-top:18px}
 </style>
 </head>
 <body>
@@ -92,6 +99,8 @@ details summary{cursor:pointer;margin-top:6px}
 <div class="modal" id="mAnnex"><div class="box"><h2>Anexo 1 · Hoja de datos</h2><div id="annexBody"></div><div style="text-align:right"><button class="btn" data-close>Cerrar</button></div></div></div>
 <div class="modal" id="mImg"><div class="box wide"><div style="text-align:right;margin-bottom:6px"><button class="btn" data-close>Cerrar</button></div><img id="bigImg" alt=""></div></div>
 <div class="modal" id="mConfirm"><div class="box"><h2 id="cfT"></h2><p id="cfP"></p><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn sec" id="cfNo">Volver</button><button class="btn danger" id="cfYes">Confirmar</button></div></div></div>
+<div id="wm"></div>
+<div id="shield"><div class="sb"><div id="shT"></div><button class="btn" id="shBtn">Volver a la prueba</button></div></div>
 
 <script>document.write('<script src="config.js?t=' + Date.now() + '"><\/script>');</script>
 <script>
@@ -132,7 +141,7 @@ function packResult(S, QQ) {
   o.push(2);
   u32(parseInt(S.seed, 36) >>> 0);
   u32(Math.floor((S.t1 || Date.now()) / 1000));
-  o.push((S.mode === "Remota" ? 1 : 0) | (S.att ? 2 : 0));
+  o.push((S.mode === "Remota" ? 1 : 0) | (S.att ? 2 : 0) | (S.terminated ? 4 : 0));
   u16(EXIDS.reduce((a, id, i) => a + S.var[id] * Math.pow(3, i), 0));
   o.push(Math.min(255, S.blur || 0));
   QQ.parts.forEach(p => u16(Math.min(65535, Math.round(((S.secTimes || {})[p.id] || 0) / 1000))));
@@ -162,7 +171,7 @@ function unpackResult(u, QQ) {
   if (u8() !== 2) throw new Error("versión");
   const P = { v: 2, answers: {}, var: {}, times: {} };
   P.seed = u32().toString(36); P.t1 = u32() * 1000;
-  const fl = u8(); P.mode = fl & 1 ? "Remota" : "Presencial"; P.att = !!(fl & 2);
+  const fl = u8(); P.mode = fl & 1 ? "Remota" : "Presencial"; P.att = !!(fl & 2); P.term = !!(fl & 4);
   let vv = u16(); EXIDS.forEach(id => { P.var[id] = vv % 3; vv = Math.floor(vv / 3); });
   P.blur = u8();
   QQ.parts.forEach(pt => { P.times[pt.id] = u16() * 1000; });
@@ -223,7 +232,7 @@ function hideAll() { document.querySelectorAll(".modal").forEach(m => m.classLis
 document.addEventListener("click", e => { if (e.target.matches("[data-close]") || e.target.classList.contains("modal")) hideAll(); });
 function confirmBox(t, p, yes) { $("#cfT").textContent = t; $("#cfP").textContent = p; show("#mConfirm"); $("#cfNo").onclick = hideAll; $("#cfYes").onclick = () => { hideAll(); yes(); }; }
 function openImg(src) { $("#bigImg").src = src; show("#mImg"); }
-function setHeader(sec, timer, annex) { $("#hsec").textContent = sec; $("#timer").classList.toggle("hide", !timer); $("#btnAnnex").classList.toggle("hide", !annex); }
+function setHeader(sec, timer, annex) { watermark(); $("#hsec").textContent = sec; $("#timer").classList.toggle("hide", !timer); $("#btnAnnex").classList.toggle("hide", !annex); }
 $("#btnAnnex").onclick = () => {
   $("#annexBody").innerHTML = (Q.annex || []).map(t => `<h3>${esc(t.title)}</h3><table class="t"><tr>${t.head.map(h => `<th>${esc(h)}</th>`).join("")}</tr>${t.rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table>`).join("") + `<p class="muted">${esc(Q.annex_note || "")}</p>`;
   show("#mAnnex");
@@ -231,9 +240,55 @@ $("#btnAnnex").onclick = () => {
 
 /* ---------- antiayudas: copiar/pegar, foco ---------- */
 ["copy", "cut", "paste", "contextmenu", "dragstart"].forEach(ev => document.addEventListener(ev, e => { if (inExam && !e.target.closest("[data-allow]")) e.preventDefault(); }));
-function lostFocus() { if (!inExam || !S || S.phase !== "section") return; S.blur = (S.blur || 0) + 1; (S.blurLog = S.blurLog || []).push([Date.now(), S.sec]); persistSoon(); const w = $("#blurInfo"); if (w) w.textContent = S.blur; }
-document.addEventListener("visibilitychange", () => { if (document.hidden) lostFocus(); });
-window.addEventListener("blur", () => lostFocus());
+const MAX_STRIKES = 3, KIND_TXT = { fuera: "Salió de la ventana de la prueba", pantalla: "Salió del modo pantalla completa", captura: "Se detectó un intento de captura de pantalla", impresion: "Se intentó imprimir o guardar la página" };
+let lastStrike = 0, wasFull = false;
+function updStrikeUI() { const w = $("#blurInfo"); if (w && S) w.textContent = (S.strikes || 0) + " de " + MAX_STRIKES; }
+function watermark() {
+  const el = $("#wm"); if (!el) return;
+  if (!inExam || !S) { el.style.backgroundImage = "none"; return; }
+  const t = (S.name + " · " + S.doc).replace(/[<>&"']/g, "");
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="380" height="190"><text x="10" y="110" transform="rotate(-24 190 95)" font-family="Arial,sans-serif" font-size="15" fill="#0B1E3F" fill-opacity="0.10">' + t + ' · INDIMON</text></svg>';
+  el.style.backgroundImage = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '")';
+}
+function shieldShow() {
+  const left = MAX_STRIKES - (S.strikes || 0), k = S.lastKind || "fuera";
+  $("#shT").innerHTML = '<b style="font-size:22px">Advertencia ' + S.strikes + ' de ' + MAX_STRIKES + '</b><br>' + KIND_TXT[k] + '.<br>Si vuelve a ocurrir ' + left + (left === 1 ? ' vez más' : ' veces más') + ', la prueba termina y se envía lo que lleve respondido.';
+  $("#shield").classList.add("on");
+}
+function strike(kind) {
+  if (!inExam || !S || S.phase !== "section") return;
+  const now = Date.now(); if (now - lastStrike < 2000) return; lastStrike = now;
+  S.blur = (S.blur || 0) + 1; S.strikes = (S.strikes || 0) + 1; S.lastKind = kind;
+  (S.blurLog = S.blurLog || []).push([now, S.sec, kind]);
+  persist(); updStrikeUI();
+  if (S.strikes >= MAX_STRIKES) forceFinish(); else shieldShow();
+}
+function forceFinish() {
+  if (!S || S.phase === "done") return;
+  clearInterval(tickH); hideAll(); wasFull = false;
+  const now = Date.now(), p = Q.parts[S.sec];
+  S.secEnd[p.id] = now; S.secTimes[p.id] = Math.min(now - S.secStart, p.mins * 60000);
+  S.terminated = { at: now, part: p.id, why: S.lastKind || "fuera" };
+  S.phase = "done"; S.t1 = now; persist();
+  $("#shield").classList.remove("on");
+  try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { }
+  screenDone();
+}
+function away(kind) { if (!inExam || !S || S.phase !== "section") return; setTimeout(() => { if (document.hidden || !document.hasFocus()) strike(kind); }, 250); }
+function capture() { try { navigator.clipboard && navigator.clipboard.writeText(" ").catch(() => { }); } catch (e) { } strike("captura"); }
+document.addEventListener("visibilitychange", () => { if (document.hidden) away("fuera"); });
+window.addEventListener("blur", () => away("fuera"));
+document.addEventListener("fullscreenchange", () => { if (document.fullscreenElement) wasFull = true; else if (wasFull) { wasFull = false; strike("pantalla"); } });
+document.addEventListener("keydown", e => {
+  if (!inExam) return;
+  const k = String(e.key || "").toLowerCase(), c = e.code;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (k === "p" || k === "s" || k === "u")) { e.preventDefault(); if (k !== "u") strike("impresion"); return; }
+  if (k === "printscreen" || c === "PrintScreen") { capture(); return; }
+  if (e.metaKey && e.shiftKey && ["Digit3", "Digit4", "Digit5", "KeyS"].includes(c)) capture();
+});
+document.addEventListener("keyup", e => { if (inExam && (e.key === "PrintScreen" || e.code === "PrintScreen")) capture(); });
+window.addEventListener("beforeprint", () => { if (inExam) strike("impresion"); });
+$("#shBtn").onclick = () => { $("#shield").classList.remove("on"); try { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => { }); } catch (e) { } };
 
 /* ---------- pantallas ---------- */
 const app = $("#app");
@@ -246,10 +301,11 @@ function screenIntro(noAuto) {
     <ul class="rules">
       <li>Cada parte tiene su propio tiempo. Al terminar el tiempo la parte se entrega sola y <b>no se puede volver</b> a ella.</li>
       <li>Puede consultar la <b>Hoja de datos</b> (botón superior) durante toda la prueba. Se permite calculadora científica no programable, lápiz y hojas de borrador.</li>
-      <li>No se permiten celulares, apuntes ni otras ventanas. Salir de esta ventana queda registrado.</li>
+      <li>No se permiten celulares, apuntes ni otras ventanas. <b>Límite de salidas:</b> cambiar de pestaña o aplicación, salir de pantalla completa o intentar capturar o imprimir la pantalla cuenta como una advertencia. <b>A la tercera, la prueba termina</b> y se envía lo que haya respondido hasta ese momento. En el celular active «No molestar» antes de empezar.</li>
+      <li>La pantalla lleva su nombre y documento como marca de agua. Está prohibido fotografiar o copiar las preguntas.</li>
       <li>Los ejercicios de cálculo (partes E y F) se responden en mm (un decimal) o en grados. Haga los cálculos en sus hojas de borrador y consérvelas: el evaluador puede pedírselas.</li>
       <li>Al terminar, su resultado se envía automáticamente al evaluador. Necesita conexión a internet.</li>
-      <li>No recargue ni cierre la página: si ocurre, el tiempo sigue corriendo.</li>
+      <li>No recargue ni cierre la página: si ocurre, el tiempo sigue corriendo. Su avance se guarda solo en esta pestaña: si la cierra o abre de nuevo el enlace, perderá lo respondido.</li>
     </ul></div>
   <div class="card"><h2>Datos del aspirante</h2>
     <div class="grid2"><label class="f">Nombre completo<input type="text" id="iName" autocomplete="off" maxlength="60"></label>
@@ -298,7 +354,7 @@ function screenSection() {
   inExam = true;
   const p = Q.parts[S.sec];
   setHeader(`Parte ${p.id} de F · ${p.name}`, true, true);
-  let h = `<div class="warnbar">Salir de la ventana queda registrado. Pérdidas de foco: <b id="blurInfo">${S.blur || 0}</b></div>`;
+  let h = `<div class="warnbar">Salir de la ventana, de pantalla completa o intentar capturar la pantalla queda registrado. A la 3.ª vez la prueba termina y se envía lo respondido. Salidas: <b id="blurInfo">${S.strikes || 0} de 3</b></div>`;
   if (["A", "C", "D"].includes(p.id)) h += renderMCQ(p.id);
   else if (p.id === "B") h += renderB();
   else if (p.id === "E") h += ["E1", "E2", "E3", "E4", "E5", "E6"].map(renderEx).join("");
@@ -380,7 +436,7 @@ async function screenDone() {
   let code = "";
   try { code = await sealCode(S); } catch (e) { code = ""; }
   app.innerHTML = `<div class="card">${LOGO ? `<img src="${LOGO}" alt="INDIMON" class="logo">` : ""}<h1>Prueba entregada</h1>
-  <p>Gracias, <b>${esc(S.name)}</b>. Su prueba terminó.</p><div id="sendBox"></div>
+  <p>Gracias, <b>${esc(S.name)}</b>. Su prueba terminó.</p>${S.terminated ? `<div class="warnbar"><b>La prueba se dio por finalizada</b> porque salió de la ventana 3 veces. Se envía lo que había respondido hasta ese momento.</div>` : ""}<div id="sendBox"></div>
   <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" id="bEvalNow">Portal del evaluador</button><button class="btn sec" id="bNew">Nueva prueba</button></div></div>`;
   $("#bEvalNow").onclick = () => screenEval(null);
   $("#bNew").onclick = () => confirmBox("¿Iniciar una nueva prueba?", "Se borrará la prueba en pantalla.", () => { clearSaved(); S = null; Q = null; screenIntro(true); });
@@ -445,7 +501,7 @@ function reportHtml(R, P, K) {
     <div><div class="pill ${R.lvl === "No apto" ? "bad" : R.lvl === "Condicionado" ? "warn" : "ok"}" style="font-size:15px">${R.lvl}</div><div class="muted" style="margin-top:4px">Nivel escrito sugerido (la práctica se califica aparte)</div></div></div>
     ${R.safety ? `<p class="bad-t">⚑ Regla de seguridad: ${R.crit.length} ítems críticos fallados (${R.crit.join(", ")}). No avanza, sin importar el puntaje.</p>` : (R.crit.length ? `<p class="muted">Ítem crítico fallado: ${R.crit.join(", ")}</p>` : "")}
     <div class="tw"><table class="t"><tr><th>Parte</th><th>Puntos</th><th>Máx.</th><th>Tiempo usado</th></tr>${QQ.parts.map(p => `<tr><td class="l">${p.id} · ${esc(p.name)}</td><td>${R.parts[p.id].got}</td><td>${p.pts}</td><td>${mins((P.times || {})[p.id])}</td></tr>`).join("")}<tr><td class="l"><b>Total</b></td><td><b>${R.total}</b></td><td>100</td><td>${mins(Object.values(P.times || {}).reduce((a, b) => a + b, 0))}</td></tr></table></div>
-    <p class="muted">Modalidad: <b>${esc(P.mode || "—")}</b>${P.att ? " · declaración aceptada" : ""}. Pérdidas de foco de la ventana: <b>${P.blur || 0}</b>${(P.blur || 0) > 3 ? " — revisar con el aspirante" : ""}. Variantes: ${Object.entries(P.var).map(([k, v]) => k + "=" + (v + 1)).join(", ")}.</p></div>`;
+    ${P.term ? `<p class="bad-t">⚑ Prueba terminada automáticamente: el aspirante salió de la ventana 3 veces. Se calificó lo respondido hasta ese momento; las partes no alcanzadas quedan en blanco.</p>` : ""}<p class="muted">Modalidad: <b>${esc(P.mode || "—")}</b>${P.att ? " · declaración aceptada" : ""}. Pérdidas de foco de la ventana: <b>${P.blur || 0}</b>${(P.blur || 0) > 3 ? " — revisar con el aspirante" : ""}. Variantes: ${Object.entries(P.var).map(([k, v]) => k + "=" + (v + 1)).join(", ")}.</p></div>`;
   h += `<div class="card"><h2>Ejercicios E y F</h2><div class="tw"><table class="t"><tr><th>Ej.</th><th>Ítem</th><th>Aspirante</th><th>Correcto (±tol.)</th><th></th></tr>` +
     R.ex.map(x => `<tr><td>${x.id}</td><td class="l">${esc(x.label)}</td><td>${esc(x.a)}</td><td>${x.c}${x.tol ? " ± " + x.tol : ""} ${esc(x.unit)}</td><td>${pill(x.ok)}</td></tr><tr><td></td><td class="l muted" colspan="4">${esc(x.sol)}</td></tr>`).join("") + `</table></div>
     <p class="muted">Calificación automática: no aplica el «50 % sin procedimiento» ni el error arrastrado de la guía. Si el puntaje queda cerca de un umbral, pida al aspirante que explique su procedimiento.</p></div>`;
