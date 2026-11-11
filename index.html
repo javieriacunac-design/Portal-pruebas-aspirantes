@@ -85,6 +85,22 @@ details summary{cursor:pointer;margin-top:6px}
 #shield.on{display:flex}
 #shield .sb{max-width:480px}
 #shield .btn{margin-top:18px}
+
+.calc-fab{position:fixed;right:12px;bottom:76px;z-index:30;background:#0B1E3F;color:#fff;border:0;border-radius:24px;padding:11px 16px;font:600 14px/1 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;touch-action:manipulation}
+.calc-fab[hidden],.calc-sheet[hidden]{display:none}
+.calc-sheet{position:fixed;left:0;right:0;bottom:0;z-index:40;max-width:440px;margin:0 auto;background:#F4F6F9;border:1px solid #C9D1DB;border-bottom:0;border-radius:14px 14px 0 0;padding:8px 10px 10px;box-shadow:0 -4px 16px rgba(0,0,0,.18);user-select:none;-webkit-user-select:none;touch-action:manipulation;color:#102}
+.calc-h{display:flex;align-items:center;gap:8px;font:600 13px system-ui,sans-serif}.calc-h b{flex:1}
+.calc-mode{background:#D6E6F8;color:#0B3A73;border-radius:6px;padding:2px 8px;font-size:12px}
+#calcX{border:0;background:none;font-size:26px;line-height:1;padding:0 6px;cursor:pointer;color:#555}
+.calc-d{background:#fff;border:1px solid #D5DBE3;border-radius:8px;padding:6px 10px;margin:6px 0;text-align:right;min-height:58px}
+.calc-e{font:13px system-ui,sans-serif;color:#667;overflow-x:auto;white-space:nowrap}
+.calc-r{font:600 26px system-ui,sans-serif;min-height:32px}
+.calc-k{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.calc-k button{height:44px;border:1px solid #CBD3DD;border-radius:8px;background:#fff;font:600 16px system-ui,sans-serif;color:#102;cursor:pointer;touch-action:manipulation;padding:0}
+.calc-k button.f{background:#E9EDF2;color:#334;font-size:14px}.calc-k button.eq{background:#0B3A73;color:#fff}.calc-k button.c{color:#B03A2E}
+.calc-k button:active{filter:brightness(.9)}
+body.calc-open{padding-bottom:var(--calc-h,430px)}
+@media (max-height:560px){.calc-k button{height:32px;font-size:14px}body.calc-open{padding-bottom:300px}}
 </style>
 </head>
 <body>
@@ -232,11 +248,133 @@ function hideAll() { document.querySelectorAll(".modal").forEach(m => m.classLis
 document.addEventListener("click", e => { if (e.target.matches("[data-close]") || e.target.classList.contains("modal")) hideAll(); });
 function confirmBox(t, p, yes) { $("#cfT").textContent = t; $("#cfP").textContent = p; show("#mConfirm"); $("#cfNo").onclick = hideAll; $("#cfYes").onclick = () => { hideAll(); yes(); }; }
 function openImg(src) { $("#bigImg").src = src; show("#mImg"); }
-function setHeader(sec, timer, annex) { watermark(); $("#hsec").textContent = sec; $("#timer").classList.toggle("hide", !timer); $("#btnAnnex").classList.toggle("hide", !annex); }
+function setHeader(sec, timer, annex) { watermark(); calcAvail(false); $("#hsec").textContent = sec; $("#timer").classList.toggle("hide", !timer); $("#btnAnnex").classList.toggle("hide", !annex); }
 $("#btnAnnex").onclick = () => {
   $("#annexBody").innerHTML = (Q.annex || []).map(t => `<h3>${esc(t.title)}</h3><table class="t"><tr>${t.head.map(h => `<th>${esc(h)}</th>`).join("")}</tr>${t.rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table>`).join("") + `<p class="muted">${esc(Q.annex_note || "")}</p>`;
   show("#mAnnex");
 };
+
+/* ---------- calculadora científica integrada (no cuenta como salida de la ventana) ---------- */
+const CALC = { expr: "", res: "", ans: 0, deg: true, listo: false, ok: false };
+const CALC_KEYS = [["sin", "cos", "tan", "DEG", "⌫"], ["asin", "acos", "atan", "(", ")"], ["x²", "√", "xʸ", "π", "÷"], ["7", "8", "9", "log", "×"], ["4", "5", "6", "ln", "−"], ["1", "2", "3", "ANS", "+"], ["0", ".", "±", "C", "="]];
+function calcFmt(x) { if (x === 0) return "0"; const t = Number(x.toPrecision(10)); return String(t); }
+function calcEval(src, ans, deg) {
+  let s = String(src).replace(/,/g, ".").replace(/-/g, "−").replace(/\*/g, "×").replace(/\//g, "÷");
+  let ab = 0; for (const c of s) { if (c === "(") ab++; else if (c === ")") ab--; }
+  if (ab < 0) throw new Error("sintaxis"); s += ")".repeat(ab);
+  const T = [], re = /(\d+\.?\d*|\.\d+|asin\(|acos\(|atan\(|sin\(|cos\(|tan\(|log\(|ln\(|√\(|ANS|π|[+−×÷^()])/y;
+  for (let i = 0; i < s.length;) {
+    re.lastIndex = i; const m = re.exec(s); if (!m) throw new Error("sintaxis");
+    const v = m[1]; i = re.lastIndex;
+    if (/^[\d.]/.test(v)) T.push({ t: "n", v: parseFloat(v) });
+    else if (/\($/.test(v) && v.length > 1) T.push({ t: "f", v: v.slice(0, -1) });
+    else if (v === "ANS" || v === "π") T.push({ t: "c", v });
+    else if (v === "(") T.push({ t: "(" }); else if (v === ")") T.push({ t: ")" });
+    else T.push({ t: "op", v });
+  }
+  let p = 0; const pk = () => T[p], nx = () => T[p++];
+  const R = x => deg ? x * Math.PI / 180 : x, D = x => deg ? x * 180 / Math.PI : x, L = x => Math.abs(x) < 1e-12 ? 0 : x;
+  const fn = (n, v) => {
+    switch (n) {
+      case "sin": return L(Math.sin(R(v))); case "cos": return L(Math.cos(R(v)));
+      case "tan": { if (Math.abs(Math.cos(R(v))) < 1e-12) throw new Error("dom"); return L(Math.tan(R(v))); }
+      case "asin": if (v < -1 || v > 1) throw new Error("dom"); return L(D(Math.asin(v)));
+      case "acos": if (v < -1 || v > 1) throw new Error("dom"); return L(D(Math.acos(v)));
+      case "atan": return L(D(Math.atan(v)));
+      case "log": if (v <= 0) throw new Error("dom"); return L(Math.log10(v));
+      case "ln": if (v <= 0) throw new Error("dom"); return L(Math.log(v));
+      case "√": if (v < 0) throw new Error("dom"); return Math.sqrt(v);
+    } throw new Error("sintaxis");
+  };
+  const cierra = () => { const t = nx(); if (!t || t.t !== ")") throw new Error("sintaxis"); };
+  const empieza = t => t && (t.t === "n" || t.t === "f" || t.t === "c" || t.t === "(");
+  const atomo = () => {
+    const t = nx(); if (!t) throw new Error("sintaxis");
+    if (t.t === "n") return t.v; if (t.t === "c") return t.v === "π" ? Math.PI : ans;
+    if (t.t === "(") { const v = expr(); cierra(); return v; }
+    if (t.t === "f") { const v = expr(); cierra(); return fn(t.v, v); }
+    throw new Error("sintaxis");
+  };
+  const potencia = () => { const b = atomo(), t = pk(); if (t && t.t === "op" && t.v === "^") { nx(); return Math.pow(b, expo()); } return b; };
+  const expo = () => { const t = pk(); if (t && t.t === "op" && (t.v === "−" || t.v === "+")) { nx(); const v = expo(); return t.v === "−" ? -v : v; } return potencia(); };
+  const unario = () => { const t = pk(); if (t && t.t === "op" && (t.v === "−" || t.v === "+")) { nx(); const v = unario(); return t.v === "−" ? -v : v; } return potencia(); };
+  const term = () => {
+    let v = unario();
+    for (; ;) {
+      const t = pk();
+      if (t && t.t === "op" && (t.v === "×" || t.v === "÷")) { nx(); const r = unario(); if (t.v === "÷") { if (r === 0) throw new Error("div"); v = v / r; } else v = v * r; }
+      else if (empieza(t)) v = v * potencia(); else break;
+    } return v;
+  };
+  const expr = () => { let v = term(); for (; ;) { const t = pk(); if (t && t.t === "op" && (t.v === "+" || t.v === "−")) { nx(); const r = term(); v = t.v === "+" ? v + r : v - r; } else break; } return v; };
+  const out = expr(); if (p !== T.length) throw new Error("sintaxis");
+  if (!isFinite(out)) throw new Error("dom");
+  return Number(out.toPrecision(12));
+}
+function calcRefresh() {
+  const e = document.getElementById("calcExpr"); if (!e) return;
+  e.textContent = CALC.expr || "0"; e.scrollLeft = e.scrollWidth;
+  document.getElementById("calcRes").textContent = CALC.res;
+  document.getElementById("calcMode").textContent = CALC.deg ? "DEG" : "RAD";
+  document.querySelectorAll("#calcKeys button[data-k=DEG]").forEach(b => b.textContent = CALC.deg ? "DEG" : "RAD");
+}
+function calcSigno() {
+  if (CALC.listo) { CALC.listo = false; CALC.expr = "ANS"; CALC.res = ""; }
+  let m = /\(−(\d+\.?\d*|\.\d+|π|ANS)\)$/.exec(CALC.expr);
+  if (m) { CALC.expr = CALC.expr.slice(0, m.index) + m[1]; return; }
+  m = /(\d+\.?\d*|\.\d+|π|ANS)$/.exec(CALC.expr);
+  if (m) CALC.expr = CALC.expr.slice(0, m.index) + "(−" + m[1] + ")"; else if (CALC.expr === "") CALC.expr = "−";
+}
+function calcPress(k) {
+  if (k === "DEG") { CALC.deg = !CALC.deg; calcRefresh(); return; }
+  if (k === "C") { CALC.expr = ""; CALC.res = ""; CALC.listo = false; calcRefresh(); return; }
+  if (k === "⌫") { CALC.listo = false; CALC.res = ""; CALC.expr = CALC.expr.replace(/(asin\(|acos\(|atan\(|sin\(|cos\(|tan\(|log\(|ln\(|√\(|ANS|.)$/u, ""); calcRefresh(); return; }
+  if (k === "=") {
+    if (!CALC.expr) return;
+    try { CALC.ans = calcEval(CALC.expr, CALC.ans, CALC.deg); CALC.res = calcFmt(CALC.ans); }
+    catch (e) { CALC.res = "Error"; }
+    CALC.listo = true; calcRefresh(); return;
+  }
+  if (k === "±") { calcSigno(); calcRefresh(); return; }
+  let add = k;
+  if (k === "x²") add = "^2"; else if (k === "xʸ") add = "^"; else if (k === "√") add = "√("; else if (/^(sin|cos|tan|asin|acos|atan|log|ln)$/.test(k)) add = k + "(";
+  if (CALC.listo) { CALC.listo = false; CALC.res = ""; CALC.expr = (/^[+−×÷^]/.test(add)) ? "ANS" : ""; }
+  CALC.expr += add; calcRefresh();
+}
+function calcAbrir(ver) {
+  const sh = document.getElementById("calcSheet"), fab = document.getElementById("calcBtn"); if (!sh) return;
+  sh.hidden = !ver; fab.hidden = ver || !CALC.ok; document.body.classList.toggle("calc-open", !!ver);
+  if (ver) { document.body.style.setProperty("--calc-h", (sh.offsetHeight + 16) + "px"); calcRefresh(); }
+}
+function calcAvail(si) {
+  CALC.ok = !!si; if (!document.getElementById("calcSheet")) calcInit();
+  const sh = document.getElementById("calcSheet"), fab = document.getElementById("calcBtn");
+  if (!si) { sh.hidden = true; document.body.classList.remove("calc-open"); fab.hidden = true; return; }
+  fab.hidden = !sh.hidden;
+}
+function calcInit() {
+  const fab = document.createElement("button"); fab.type = "button"; fab.id = "calcBtn"; fab.className = "calc-fab"; fab.hidden = true; fab.textContent = "Calculadora";
+  const sh = document.createElement("div"); sh.id = "calcSheet"; sh.className = "calc-sheet"; sh.hidden = true; sh.setAttribute("role", "dialog"); sh.setAttribute("aria-label", "Calculadora científica");
+  sh.innerHTML = '<div class="calc-h"><b>Calculadora científica</b><span class="calc-mode" id="calcMode">DEG</span><button type="button" id="calcX" aria-label="Cerrar calculadora">×</button></div><div class="calc-d"><div id="calcExpr" class="calc-e">0</div><div id="calcRes" class="calc-r"></div></div><div id="calcKeys" class="calc-k"></div>';
+  document.body.appendChild(fab); document.body.appendChild(sh);
+  const F = new Set(["sin", "cos", "tan", "asin", "acos", "atan", "x²", "√", "xʸ", "π", "log", "ln", "ANS", "DEG", "(", ")"]);
+  CALC_KEYS.flat().forEach(k => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = k; b.dataset.k = k;
+    if (F.has(k)) b.className = "f"; if (k === "=") b.className = "eq"; if (k === "C" || k === "⌫") b.className = "c";
+    b.setAttribute("aria-label", { "⌫": "Borrar", "±": "Cambiar signo", "x²": "Al cuadrado", "xʸ": "Potencia", "√": "Raíz cuadrada", "÷": "Dividir", "×": "Multiplicar", "−": "Restar", "+": "Sumar", "=": "Igual", "C": "Limpiar todo" }[k] || k);
+    b.onclick = () => calcPress(k); sh.querySelector("#calcKeys").appendChild(b);
+  });
+  fab.onclick = () => calcAbrir(true); document.getElementById("calcX").onclick = () => calcAbrir(false);
+  document.addEventListener("keydown", e => {
+    if (sh.hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target && e.target.closest && e.target.closest("input,textarea,select")) return;
+    const k = e.key; let m = null;
+    if (/^[0-9]$/.test(k)) m = k; else if (k === "." || k === ",") m = "."; else if (k === "+") m = "+"; else if (k === "-") m = "−"; else if (k === "*") m = "×"; else if (k === "/") m = "÷";
+    else if (k === "^") m = "xʸ"; else if (k === "(" || k === ")") m = k; else if (k === "Enter" || k === "=") m = "="; else if (k === "Backspace") m = "⌫";
+    else if (k === "Escape") { calcAbrir(false); e.preventDefault(); return; }
+    if (m) { e.preventDefault(); calcPress(m); }
+  });
+}
 
 /* ---------- antiayudas: copiar/pegar, foco ---------- */
 ["copy", "cut", "paste", "contextmenu", "dragstart"].forEach(ev => document.addEventListener(ev, e => { if (inExam && !e.target.closest("[data-allow]")) e.preventDefault(); }));
@@ -300,7 +438,7 @@ function screenIntro(noAuto) {
     <p class="muted">INDIMON SAS · Versión digital cronometrada · 90 minutos en 6 partes · 100 puntos</p>
     <ul class="rules">
       <li>Cada parte tiene su propio tiempo. Al terminar el tiempo la parte se entrega sola y <b>no se puede volver</b> a ella.</li>
-      <li>Puede consultar la <b>Hoja de datos</b> (botón superior) durante toda la prueba. Se permite calculadora científica no programable, lápiz y hojas de borrador.</li>
+      <li>Puede consultar la <b>Hoja de datos</b> (botón superior) durante toda la prueba. Se permite calculadora científica no programable propia <b>o</b> la calculadora integrada de la prueba (botón «Calculadora» en las partes E y F), lápiz y hojas de borrador. No use la calculadora del celular ni la del computador: cuenta como salida de la ventana.</li>
       <li>No se permiten celulares, apuntes ni otras ventanas. <b>Límite de salidas:</b> cambiar de pestaña o aplicación, salir de pantalla completa o intentar capturar o imprimir la pantalla cuenta como una advertencia. <b>A la tercera, la prueba termina</b> y se envía lo que haya respondido hasta ese momento. En el celular active «No molestar» antes de empezar.</li>
       <li>La pantalla lleva su nombre y documento como marca de agua. Está prohibido fotografiar o copiar las preguntas.</li>
       <li>Los ejercicios de cálculo (partes E y F) se responden en mm (un decimal) o en grados. Haga los cálculos en sus hojas de borrador y consérvelas: el evaluador puede pedírselas.</li>
@@ -363,6 +501,7 @@ function screenSection() {
   bindInputs();
   $("#bFin").onclick = () => confirmBox(`¿Finalizar la parte ${p.id}?`, "No podrá volver a ella.", () => endSection(false));
   clearInterval(tickH); tickH = setInterval(tick, 400); tick();
+  calcAvail(["E", "F"].includes(p.id));
 }
 
 function tick() {

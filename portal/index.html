@@ -107,7 +107,19 @@ function ir(v) {
   ({ sol: vistaSolicitudes, nueva: vistaNueva, pruebas: vistaPruebas, usuarios: vistaUsuarios, bitacora: vistaBitacora }[v] || vistaSolicitudes)();
 }
 function enlazarTabs() { $$("nav.tabs button").forEach(b => b.onclick = () => ir(b.dataset.v)); }
-function pEstado(e) { return `<span class="pill ${{ "Pendiente": "p-gris", "Enviada": "p-azul", "En proceso": "p-am", "Finalizada": "p-ok", "Anulada": "p-mal" }[e] || "p-gris"}">${esc(e)}</span>`; }
+/* ===== hora programada (hora de Colombia) ===== */
+const TZ = "America/Bogota";
+function fHora(v) { if (!v) return "—"; const d = new Date(v); if (isNaN(d)) return "—"; return d.toLocaleDateString("es-CO", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: TZ }) + " · " + d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", timeZone: TZ }); }
+function fCorta(v) { if (!v) return "—"; const d = new Date(v); if (isNaN(d)) return "—"; return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", timeZone: TZ }) + ", " + d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", timeZone: TZ }); }
+function fSoloHora(v) { const d = new Date(v); return isNaN(d) ? "" : d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", timeZone: TZ }); }
+function aIsoCO(v) { return v ? v + ":00-05:00" : ""; }
+function ahoraCO(min) { return new Date(Math.ceil((Date.now() + (min || 0) * 60000) / 1800000) * 1800000 - 5 * 3600000).toISOString().slice(0, 16); }
+function minCO() { return new Date(Date.now() - 5 * 3600000).toISOString().slice(0, 16); }
+function ventanaTxt(s) { return s.programada ? `Puede iniciar entre las <b>${esc(fSoloHora(s.abre))}</b> y las <b>${esc(fSoloHora(s.vence))}</b>; pasada esa hora el enlace vence.` : ""; }
+function bloqueRepro(d) {
+  return `<div class="fila" style="align-items:flex-end;margin-top:8px"><label class="f" style="margin:0">Nueva fecha y hora (hora de Colombia)<input type="datetime-local" id="dRepF" value="${ahoraCO(30)}" min="${minCO()}"></label><button class="btn chico" id="dRepro">Reprogramar y generar enlace nuevo</button></div><div id="dRepE" class="err"></div>`;
+}
+function pEstado(e) { return `<span class="pill ${{ "Pendiente": "p-gris", "Enviada": "p-azul", "En proceso": "p-am", "Finalizada": "p-ok", "Anulada": "p-mal", "Vencida": "p-mal" }[e] || "p-gris"}">${esc(e)}</span>`; }
 function pTec(s) {
   if (s.conceptoFinal) return `<span class="pill ${s.conceptoFinal.resultado === "No apto" ? "p-mal" : "p-ok"}">${esc(s.conceptoFinal.resultado)}</span>`;
   if (s.estadoTecnico === "Sin resultado") return `<span class="tenue">—</span>`;
@@ -130,11 +142,12 @@ async function vistaSolicitudes() {
     ["Por enviar", s => s.estado === "Pendiente", "Pendiente"],
     ["Enviadas / en curso", s => s.estado === "Enviada" || s.estado === "En proceso", "curso"],
     ["Pendientes revisión técnica", s => s.estado === "Finalizada" && !s.conceptoFinal, "tec", true],
-    ["Con concepto técnico", s => !!s.conceptoFinal, "concepto"]];
+    ["Con concepto técnico", s => !!s.conceptoFinal, "concepto"],
+    ["Vencidas (reprogramar)", s => s.estado === "Vencida", "Vencida", true]];
   app.innerHTML = tabs() + `<div class="kpis noimprimir">${kp.map(([l, f, k, al]) => `<div class="kpi ${al && c(f) ? "alerta" : ""}" data-k="${k}"><b>${c(f)}</b><span>${l}</span></div>`).join("")}</div>
    <div class="card"><div class="g3 noimprimir"><label class="f">Buscar<input type="text" id="fT" placeholder="Nombre, documento o ID"></label>
    <label class="f">Prueba<select id="fP"><option value="">Todas</option>${PRUEBAS.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("")}</select></label>
-   <label class="f">Estado<select id="fE"><option value="">Todos (sin anuladas)</option><option value="Pendiente">Pendiente</option><option value="curso">Enviada / En proceso</option><option value="tec">Pendiente revisión técnica</option><option value="concepto">Con concepto técnico</option><option value="Anulada">Anulada</option></select></label></div>
+   <label class="f">Estado<select id="fE"><option value="">Todos (sin anuladas)</option><option value="Pendiente">Pendiente</option><option value="curso">Enviada / En proceso</option><option value="tec">Pendiente revisión técnica</option><option value="concepto">Con concepto técnico</option><option value="Vencida">Vencida (enlace vencido)</option><option value="Anulada">Anulada</option></select></label></div>
    <div class="tw" id="tabla"></div><div class="fila noimprimir" style="margin-top:10px"><button class="btn sec" id="bCsv">Copiar tabla para Excel</button><span id="csvM" class="tenue"></span></div></div>`;
   enlazarTabs();
   $("#fT").value = FILTRO.t || ""; $("#fP").value = FILTRO.p || ""; $("#fE").value = FILTRO.e || "";
@@ -150,16 +163,16 @@ async function vistaSolicitudes() {
       if (e === "concepto") return !!s.conceptoFinal;
       return s.estado === e;
     });
-    $("#tabla").innerHTML = f.length ? `<table class="t"><tr><th>ID</th><th>Fecha</th><th>Aspirante</th><th>Cargo</th><th>Prueba</th><th>Estado</th><th>Puntaje teórico</th><th>Dpto. Técnico</th><th>Etapa RH</th></tr>` +
-      f.map(s => `<tr class="clic" data-id="${esc(s.id)}"><td><b>${esc(s.id)}</b></td><td>${fecha(s.creada)}</td><td>${esc(s.aspirante)}<div class="tenue">${esc(s.documento)}</div></td><td>${esc(s.cargo)}</td><td>${esc(nombrePrueba(s.pruebaId))}</td><td>${pEstado(s.estado)}</td><td>${pPuntaje(s)}</td><td>${pTec(s)}</td><td>${s.etapaRH && s.etapaRH.length ? esc(s.etapaRH[s.etapaRH.length - 1].etapa) : s.puedeAvanzar ? `<span class="pill p-azul">Habilitado</span>` : `<span class="tenue">🔒</span>`}</td></tr>`).join("") + `</table>`
+    $("#tabla").innerHTML = f.length ? `<table class="t"><tr><th>ID</th><th>Creada</th><th>Prueba programada</th><th>Aspirante</th><th>Cargo</th><th>Prueba</th><th>Estado</th><th>Puntaje teórico</th><th>Dpto. Técnico</th><th>Etapa RH</th></tr>` +
+      f.map(s => `<tr class="clic" data-id="${esc(s.id)}"><td><b>${esc(s.id)}</b></td><td>${fecha(s.creada)}</td><td>${s.programada ? esc(fCorta(s.programada)) : "—"}</td><td>${esc(s.aspirante)}<div class="tenue">${esc(s.documento)}</div></td><td>${esc(s.cargo)}</td><td>${esc(nombrePrueba(s.pruebaId))}</td><td>${pEstado(s.estado)}</td><td>${pPuntaje(s)}</td><td>${pTec(s)}</td><td>${s.etapaRH && s.etapaRH.length ? esc(s.etapaRH[s.etapaRH.length - 1].etapa) : s.puedeAvanzar ? `<span class="pill p-azul">Habilitado</span>` : `<span class="tenue">🔒</span>`}</td></tr>`).join("") + `</table>`
       : `<p class="tenue">${SOLS.length ? "Ninguna solicitud coincide con el filtro." : "Aún no hay solicitudes."}${esRH() && !SOLS.length ? " Cree la primera en «Nueva solicitud»." : ""}</p>`;
     $$("#tabla tr.clic").forEach(r => r.onclick = () => verSolicitud(r.dataset.id));
   };
   $("#fT").oninput = pinta; $("#fP").onchange = pinta; $("#fE").onchange = pinta;
   $$(".kpi").forEach(k => k.onclick = () => { $("#fE").value = k.dataset.k; pinta(); });
   $("#bCsv").onclick = () => {
-    const cab = ["ID", "Fecha", "Aspirante", "Documento", "Teléfono", "Cargo", "Prueba", "Estado", "Puntaje %", "Puntos", "Concepto técnico", "Etapa RH"];
-    const L = [cab.join("\t")].concat(SOLS.map(s => [s.id, (s.creada || "").slice(0, 10), s.aspirante, s.documento, s.telefono, s.cargo, nombrePrueba(s.pruebaId), s.estado, s.puntaje ? s.puntaje.pct : "", s.puntaje ? s.puntaje.total + "/" + s.puntaje.max : "", s.conceptoFinal ? s.conceptoFinal.resultado : s.estadoTecnico, s.etapaRH && s.etapaRH.length ? s.etapaRH[s.etapaRH.length - 1].etapa : ""].map(x => String(x == null ? "" : x).replace(/[\t\n]+/g, " ")).join("\t")));
+    const cab = ["ID", "Fecha", "Programada", "Aspirante", "Documento", "Teléfono", "Cargo", "Prueba", "Estado", "Puntaje %", "Puntos", "Concepto técnico", "Etapa RH"];
+    const L = [cab.join("\t")].concat(SOLS.map(s => [s.id, (s.creada || "").slice(0, 10), s.programada ? fHora(s.programada) : "", s.aspirante, s.documento, s.telefono, s.cargo, nombrePrueba(s.pruebaId), s.estado, s.puntaje ? s.puntaje.pct : "", s.puntaje ? s.puntaje.total + "/" + s.puntaje.max : "", s.conceptoFinal ? s.conceptoFinal.resultado : s.estadoTecnico, s.etapaRH && s.etapaRH.length ? s.etapaRH[s.etapaRH.length - 1].etapa : ""].map(x => String(x == null ? "" : x).replace(/[\t\n]+/g, " ")).join("\t")));
     copiar(L.join("\n"), $("#bCsv"));
   };
   pinta();
@@ -172,6 +185,8 @@ function vistaNueva() {
    <label class="f">Número de documento<input type="text" id="nD" inputmode="numeric" maxlength="20"></label>
    <label class="f">Celular (WhatsApp)<input type="tel" id="nT" placeholder="3001234567" maxlength="15"></label>
    <label class="f">Cargo al que se postula<select id="nC"><option value="">— elija —</option>${CARGOS.map(c => `<option>${c}</option>`).join("")}</select></label></div>
+   <div class="g2"><label class="f">Fecha y hora de la prueba (hora de Colombia)<input type="datetime-local" id="nF" value="${ahoraCO(30)}" min="${minCO()}"></label>
+   <div class="tenue" style="align-self:end;padding-bottom:8px">El aspirante podrá iniciar desde 10 minutos antes hasta 30 minutos después de esta hora. Pasado ese tiempo el enlace vence y se debe reprogramar.</div></div>
    <label class="f">Prueba técnica asignada<select id="nP"><option value="">— elija —</option>${PRUEBAS.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)} (${p.minutos} min)</option>`).join("")}</select></label>
    <div id="nInfo" class="tenue"></div><div id="nE" class="err"></div><button class="btn" id="nB">Crear solicitud</button></div><div id="nRes"></div>`;
   enlazarTabs();
@@ -181,9 +196,10 @@ function vistaNueva() {
   $("#nB").onclick = async () => {
     $("#nE").textContent = "";
     if (!$("#nC").value || !$("#nP").value) { $("#nE").textContent = "Elija el cargo y la prueba."; return; }
+    if (!$("#nF").value) { $("#nE").textContent = "Indique la fecha y la hora de la prueba."; return; }
     $("#nB").disabled = true;
     try {
-      const s = await q("solicitudCrear", { aspirante: $("#nA").value, documento: $("#nD").value, telefono: $("#nT").value, cargo: $("#nC").value, pruebaId: $("#nP").value });
+      const s = await q("solicitudCrear", { aspirante: $("#nA").value, documento: $("#nD").value, telefono: $("#nT").value, cargo: $("#nC").value, pruebaId: $("#nP").value, programada: aIsoCO($("#nF").value) });
       $("#nRes").innerHTML = `<div class="card" style="max-width:760px"><div class="aviso ok">Solicitud <b>${esc(s.id)}</b> creada para ${esc(s.aspirante)}.</div>${bloqueInvitacion(s)}<div class="fila" style="margin-top:10px"><button class="btn sec" id="nVer">Ver solicitud</button><button class="btn sec" id="nOtra">Crear otra</button></div></div>`;
       enlazarInvitacion(s); $("#nVer").onclick = () => verSolicitud(s.id); $("#nOtra").onclick = () => vistaNueva();
       $$("#nA,#nD,#nT").forEach(i => i.value = "");
@@ -193,11 +209,11 @@ function vistaNueva() {
 }
 function mensajeWA(s) {
   const p = PRUEBAS.find(x => x.id === s.pruebaId) || {};
-  return `Buen día, ${s.aspirante.split(" ")[0]}. Le escribimos de Recursos Humanos de INDIMON SAS.\n\nComo parte del proceso de selección para el cargo de *${s.cargo}*, lo invitamos a presentar la prueba técnica en línea.\n\n📋 Solicitud: ${s.id}\n📝 Prueba: ${p.nombre || s.pruebaId}\n⏱️ Duración: ${p.minutos || ""} minutos\n\n🔗 Su enlace personal (no lo comparta):\n${URL_PRUEBA(s.token)}\n\nAntes de empezar:\n• Use computador, tablet o celular con internet estable.\n• Tenga calculadora, lápiz y papel.\n• Busque un lugar tranquilo; una vez inicie, el tiempo corre.\n• La prueba es individual: sin ayuda de otras personas ni de internet.\n• Al terminar, sus respuestas quedan registradas automáticamente.\n\nCualquier duda, responda a este mensaje.\nINDIMON SAS`;
+  return `Buen día, ${s.aspirante.split(" ")[0]}. Le escribimos de Recursos Humanos de INDIMON SAS.\n\nComo parte del proceso de selección para el cargo de *${s.cargo}*, lo invitamos a presentar la prueba técnica en línea.\n\n📋 Solicitud: ${s.id}\n📝 Prueba: ${p.nombre || s.pruebaId}\n⏱️ Duración: ${p.minutos || ""} minutos\n${s.programada ? `📅 Fecha y hora: *${fHora(s.programada)}* (hora de Colombia)\n` : ""}\n🔗 Su enlace personal (no lo comparta):\n${URL_PRUEBA(s.token)}\n\nAntes de empezar:\n• Use computador, tablet o celular con internet estable.\n${s.programada ? `• Ingrese a la hora indicada: puede entrar desde las ${fSoloHora(s.abre)} y el enlace vence a las ${fSoloHora(s.vence)} si no ha iniciado. Después deberá pedir una nueva hora.\n` : ""}• Tenga lápiz y papel. Puede usar su calculadora científica (no programable) o la calculadora que trae la prueba; no use la del celular ni la del computador.\n• No cambie de ventana ni de aplicación: a la tercera salida la prueba termina y se envía lo que haya respondido.\n• Busque un lugar tranquilo; una vez inicie, el tiempo corre.\n• La prueba es individual: sin ayuda de otras personas ni de internet.\n• Al terminar, sus respuestas quedan registradas automáticamente.\n\nCualquier duda, responda a este mensaje.\nINDIMON SAS`;
 }
 function waURL(s) { let t = String(s.telefono || "").replace(/\D/g, ""); if (t.length === 10 && t[0] === "3") t = "57" + t; return "https://wa.me/" + t + "?text=" + encodeURIComponent(mensajeWA(s)); }
 function bloqueInvitacion(s) {
-  return `<h3>Invitación al aspirante</h3><p class="tenue">Enlace personal de la prueba (solo sirve para esta solicitud):</p><div class="code" id="invLink">${esc(URL_PRUEBA(s.token))}</div>
+  return `<h3>Invitación al aspirante</h3>${s.programada ? `<div class="aviso info"><b>Prueba programada:</b> ${esc(fHora(s.programada))} (hora de Colombia). ${ventanaTxt(s)}</div>` : ""}<p class="tenue">Enlace personal de la prueba (solo sirve para esta solicitud):</p><div class="code" id="invLink">${esc(URL_PRUEBA(s.token))}</div>
    <div class="fila" style="margin-top:8px"><a class="btn wa" id="invWa" href="${esc(waURL(s))}" target="_blank" rel="noopener">Enviar por WhatsApp</a><button class="btn sec" id="invCopL">Copiar enlace</button><button class="btn sec" id="invCopM">Copiar mensaje</button></div>
    <p class="tenue">«Enviar por WhatsApp» abre WhatsApp con el mensaje listo; solo falta presionar enviar. La solicitud queda marcada como enviada.</p>`;
 }
@@ -229,9 +245,11 @@ function pintarDetalle(d) {
   let h = tabs() + `<div class="card"><div class="fila" style="justify-content:space-between"><div><h1 style="margin:0">${esc(d.id)} · ${esc(d.aspirante)}</h1>
      <div class="tenue">Documento ${esc(d.documento)} · Cel. ${esc(d.telefono)} · ${esc(d.cargo)} · ${esc(d.prueba.nombre)}</div></div>
      <div class="fila noimprimir"><button class="btn sec chico" onclick="window.print()">Imprimir informe</button><button class="btn sec chico" id="dVolver">← Volver</button></div></div>
-     ${pasos(d)}<div class="tenue">Creada por ${esc(d.creadaPor)} el ${fecha(d.creada, true)} · Estado: ${pEstado(d.estado)}</div></div>`;
-  if (esRH() && (d.estado === "Pendiente" || d.estado === "Enviada" || d.estado === "En proceso")) {
-    h += `<div class="card noimprimir">${bloqueInvitacion(d)}<div class="fila">${d.estado !== "En proceso" ? `<button class="btn sec chico" id="dNuevo">Generar enlace nuevo</button>` : ""}<button class="btn sec chico" id="dAnular" style="color:var(--rojo);border-color:var(--rojo)">Anular solicitud</button></div></div>`;
+     ${pasos(d)}<div class="tenue">Creada por ${esc(d.creadaPor)} el ${fecha(d.creada, true)} · Estado: ${pEstado(d.estado)}${d.programada ? ` · Prueba programada: <b>${esc(fHora(d.programada))}</b>` : ""}</div></div>`;
+  if (esRH() && d.estado === "Vencida") {
+    h += `<div class="card noimprimir"><div class="aviso mal"><b>Enlace vencido.</b> El aspirante no inició la prueba programada para el ${esc(fHora(d.programada))} dentro del plazo (de ${esc(fSoloHora(d.abre))} a ${esc(fSoloHora(d.vence))}). Reprograme para fijar una nueva hora; se genera un enlace nuevo y el anterior deja de servir.</div>${bloqueRepro(d)}<div class="fila" style="margin-top:10px"><button class="btn sec chico" id="dAnular" style="color:var(--rojo);border-color:var(--rojo)">Anular solicitud</button></div></div>`;
+  } else if (esRH() && (d.estado === "Pendiente" || d.estado === "Enviada" || d.estado === "En proceso")) {
+    h += `<div class="card noimprimir">${bloqueInvitacion(d)}<div class="fila">${d.estado !== "En proceso" ? `<button class="btn sec chico" id="dNuevo">Generar enlace nuevo</button>` : ""}<button class="btn sec chico" id="dAnular" style="color:var(--rojo);border-color:var(--rojo)">Anular solicitud</button></div>${d.estado !== "En proceso" ? `<details style="margin-top:10px"><summary class="tenue" style="cursor:pointer">Cambiar la fecha y hora de la prueba</summary>${bloqueRepro(d)}</details>` : ""}</div>`;
   }
   if (r) {
     const pend = r.pendientesManual > 0;
@@ -256,6 +274,12 @@ function pintarDetalle(d) {
   $$("tr.clic[data-id]").forEach(t => t.onclick = () => verSolicitud(t.dataset.id));
   if ($("#invWa")) enlazarInvitacion(d, () => { if (d.estado === "Pendiente") setTimeout(() => verSolicitud(d.id), 600); });
   if ($("#dNuevo")) $("#dNuevo").onclick = () => confirmar("¿Generar un enlace nuevo?", "El enlace anterior dejará de funcionar. Úselo si el aspirante perdió el mensaje o se envió a otra persona.", async () => { try { await q("nuevoEnlace", { id: d.id }); verSolicitud(d.id); } catch (e) { alertaErr(e); } });
+  if ($("#dRepro")) $("#dRepro").onclick = async () => {
+    $("#dRepE").textContent = "";
+    if (!$("#dRepF").value) { $("#dRepE").textContent = "Indique la nueva fecha y hora."; return; }
+    $("#dRepro").disabled = true;
+    try { await q("reprogramar", { id: d.id, programada: aIsoCO($("#dRepF").value) }); verSolicitud(d.id); } catch (e) { $("#dRepE").textContent = e.message; $("#dRepro").disabled = false; }
+  };
   if ($("#dAnular")) $("#dAnular").onclick = () => confirmar("¿Anular la solicitud?", "El aspirante ya no podrá presentar la prueba con este enlace.", async () => { try { await q("anular", { id: d.id }); verSolicitud(d.id); } catch (e) { alertaErr(e); } }, "Anular");
   enlazarRevision(d); enlazarPractica(d); enlazarConcepto(d); enlazarRH(d);
 }
