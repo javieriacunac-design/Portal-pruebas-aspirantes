@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Prueba técnica — INDIMON SAS</title>
+<link rel="stylesheet" href="comun.css">
+<style>
+.q{padding:14px 0;border-top:1px solid var(--gris)}.q:first-of-type{border-top:0}
+.q .enun{font-weight:600;margin-bottom:8px}
+.op{display:flex;gap:10px;align-items:flex-start;padding:7px 10px;border:1px solid transparent;border-radius:8px;cursor:pointer}
+.op:hover{background:var(--gris)}.op input{margin-top:4px}.op.sel{background:var(--celeste);border-color:var(--azul2)}
+.vf{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center;padding:4px 0}
+.vf .bt{display:flex;gap:6px}.vf .bt label{border:1px solid var(--linea);border-radius:8px;padding:4px 12px;cursor:pointer;font-weight:600}
+.vf .bt input{display:none}.vf .bt label:has(input:checked){background:var(--azul);color:#fff;border-color:var(--azul)}
+.fig{text-align:center;margin:8px 0}.fig img{max-width:100%;border:1px solid var(--linea);border-radius:8px;background:#fff;cursor:zoom-in}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.campo{display:grid;grid-template-columns:1fr 140px 56px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--gris)}
+@media(max-width:600px){.campo{grid-template-columns:1fr 110px 44px}}
+.empar{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--gris)}
+.empar img{width:150px;border:1px solid var(--linea);border-radius:8px;background:#fff}
+.abi{padding:8px 0;border-top:1px solid var(--gris)}.abi img{max-width:260px;border:1px solid var(--linea);border-radius:8px;background:#fff;display:block;margin:6px 0}
+.barra{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--linea);padding:10px 18px;display:flex;gap:12px;align-items:center;justify-content:space-between;z-index:15}
+table.t.anexo td,table.t.anexo th{text-align:center}
+#wm{position:fixed;inset:0;z-index:9000;pointer-events:none;background-repeat:repeat}
+#shield{position:fixed;inset:0;z-index:9999;background:#0B1E3F;color:#fff;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;font-size:18px;line-height:1.5}
+#shield.on{display:flex}#shield .sb{max-width:480px}#shield .btn{margin-top:18px}
+@media print{html,body{display:none!important}}
+
+.calc-fab{position:fixed;right:12px;bottom:76px;z-index:30;background:#0B1E3F;color:#fff;border:0;border-radius:24px;padding:11px 16px;font:600 14px/1 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:pointer;touch-action:manipulation}
+.calc-fab[hidden],.calc-sheet[hidden]{display:none}
+.calc-sheet{position:fixed;left:0;right:0;bottom:0;z-index:40;max-width:440px;margin:0 auto;background:#F4F6F9;border:1px solid #C9D1DB;border-bottom:0;border-radius:14px 14px 0 0;padding:8px 10px 10px;box-shadow:0 -4px 16px rgba(0,0,0,.18);user-select:none;-webkit-user-select:none;touch-action:manipulation;color:#102}
+.calc-h{display:flex;align-items:center;gap:8px;font:600 13px system-ui,sans-serif}.calc-h b{flex:1}
+.calc-mode{background:#D6E6F8;color:#0B3A73;border-radius:6px;padding:2px 8px;font-size:12px}
+#calcX{border:0;background:none;font-size:26px;line-height:1;padding:0 6px;cursor:pointer;color:#555}
+.calc-d{background:#fff;border:1px solid #D5DBE3;border-radius:8px;padding:6px 10px;margin:6px 0;text-align:right;min-height:58px}
+.calc-e{font:13px system-ui,sans-serif;color:#667;overflow-x:auto;white-space:nowrap}
+.calc-r{font:600 26px system-ui,sans-serif;min-height:32px}
+.calc-k{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.calc-k button{height:44px;border:1px solid #CBD3DD;border-radius:8px;background:#fff;font:600 16px system-ui,sans-serif;color:#102;cursor:pointer;touch-action:manipulation;padding:0}
+.calc-k button.f{background:#E9EDF2;color:#334;font-size:14px}.calc-k button.eq{background:#0B3A73;color:#fff}.calc-k button.c{color:#B03A2E}
+.calc-k button:active{filter:brightness(.9)}
+body.calc-open{padding-bottom:var(--calc-h,430px)}
+@media (max-height:560px){.calc-k button{height:32px;font-size:14px}body.calc-open{padding-bottom:300px}}
+</style>
+<script>document.write('<script src="../config.js?t=' + Date.now() + '"><\/script>');</script>
+<script src="comun.js"></script>
+</head>
+<body>
+<header class="top"><span class="marca">INDIMON SAS</span><span class="sec" id="hSec">Prueba técnica</span><button class="btn claro oculto" id="bAnexo">Hoja de datos</button><span class="reloj oculto" id="reloj">--:--</span></header>
+<div id="wm"></div>
+<div id="shield"><div class="sb"><div id="shT"></div><button class="btn" id="shBtn">Volver a la prueba</button></div></div>
+<main class="angosto" id="app"><div class="card"><p class="tenue">Cargando su prueba…</p></div></main>
+<script>
+"use strict";
+const T = new URLSearchParams(location.search).get("t") || "";
+const LK = "indimon_prueba_" + T;
+let INFO = null, P = null, E = null, tickH = null, enPrueba = false;
+const app = $("#app");
+
+function guardar() { ls(LK, E); }
+function hdr(t, reloj, anexo) { marcaAgua(); calcAvail(false); $("#hSec").textContent = t; $("#reloj").classList.toggle("oculto", !reloj); $("#bAnexo").classList.toggle("oculto", !anexo || !P || !P.anexo); }
+function fmt(ms) { ms = Math.max(0, ms); const s = Math.ceil(ms / 1000), m = Math.floor(s / 60); return String(m).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+function logoHTML() { return `<img src="img/logo.jpg" alt="INDIMON" class="logo">`; }
+$("#bAnexo").onclick = () => modal(`<h2>Hoja de datos</h2>` + P.anexo.tablas.map(t => `<h3>${esc(t.title)}</h3><div class="tw"><table class="t anexo"><tr>${t.head.map(h => `<th>${esc(h)}</th>`).join("")}</tr>${t.rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`).join("") + `<p class="tenue">${esc(P.anexo.nota || "")}</p><div style="text-align:right"><button class="btn" onclick="cerrarModal()">Cerrar</button></div>`, true);
+function verImg(src) { modal(`<div style="text-align:right;margin-bottom:6px"><button class="btn" onclick="cerrarModal()">Cerrar</button></div><img src="${src}" style="max-width:100%">`, true); }
+
+/* ---------- calculadora científica integrada (no cuenta como salida de la ventana) ---------- */
+const CALC = { expr: "", res: "", ans: 0, deg: true, listo: false, ok: false };
+const CALC_KEYS = [["sin", "cos", "tan", "DEG", "⌫"], ["asin", "acos", "atan", "(", ")"], ["x²", "√", "xʸ", "π", "÷"], ["7", "8", "9", "log", "×"], ["4", "5", "6", "ln", "−"], ["1", "2", "3", "ANS", "+"], ["0", ".", "±", "C", "="]];
+function calcFmt(x) { if (x === 0) return "0"; const t = Number(x.toPrecision(10)); return String(t); }
+function calcEval(src, ans, deg) {
+  let s = String(src).replace(/,/g, ".").replace(/-/g, "−").replace(/\*/g, "×").replace(/\//g, "÷");
+  let ab = 0; for (const c of s) { if (c === "(") ab++; else if (c === ")") ab--; }
+  if (ab < 0) throw new Error("sintaxis"); s += ")".repeat(ab);
+  const T = [], re = /(\d+\.?\d*|\.\d+|asin\(|acos\(|atan\(|sin\(|cos\(|tan\(|log\(|ln\(|√\(|ANS|π|[+−×÷^()])/y;
+  for (let i = 0; i < s.length;) {
+    re.lastIndex = i; const m = re.exec(s); if (!m) throw new Error("sintaxis");
+    const v = m[1]; i = re.lastIndex;
+    if (/^[\d.]/.test(v)) T.push({ t: "n", v: parseFloat(v) });
+    else if (/\($/.test(v) && v.length > 1) T.push({ t: "f", v: v.slice(0, -1) });
+    else if (v === "ANS" || v === "π") T.push({ t: "c", v });
+    else if (v === "(") T.push({ t: "(" }); else if (v === ")") T.push({ t: ")" });
+    else T.push({ t: "op", v });
+  }
+  let p = 0; const pk = () => T[p], nx = () => T[p++];
+  const R = x => deg ? x * Math.PI / 180 : x, D = x => deg ? x * 180 / Math.PI : x, L = x => Math.abs(x) < 1e-12 ? 0 : x;
+  const fn = (n, v) => {
+    switch (n) {
+      case "sin": return L(Math.sin(R(v))); case "cos": return L(Math.cos(R(v)));
+      case "tan": { if (Math.abs(Math.cos(R(v))) < 1e-12) throw new Error("dom"); return L(Math.tan(R(v))); }
+      case "asin": if (v < -1 || v > 1) throw new Error("dom"); return L(D(Math.asin(v)));
+      case "acos": if (v < -1 || v > 1) throw new Error("dom"); return L(D(Math.acos(v)));
+      case "atan": return L(D(Math.atan(v)));
+      case "log": if (v <= 0) throw new Error("dom"); return L(Math.log10(v));
+      case "ln": if (v <= 0) throw new Error("dom"); return L(Math.log(v));
+      case "√": if (v < 0) throw new Error("dom"); return Math.sqrt(v);
+    } throw new Error("sintaxis");
+  };
+  const cierra = () => { const t = nx(); if (!t || t.t !== ")") throw new Error("sintaxis"); };
+  const empieza = t => t && (t.t === "n" || t.t === "f" || t.t === "c" || t.t === "(");
+  const atomo = () => {
+    const t = nx(); if (!t) throw new Error("sintaxis");
+    if (t.t === "n") return t.v; if (t.t === "c") return t.v === "π" ? Math.PI : ans;
+    if (t.t === "(") { const v = expr(); cierra(); return v; }
+    if (t.t === "f") { const v = expr(); cierra(); return fn(t.v, v); }
+    throw new Error("sintaxis");
+  };
+  const potencia = () => { const b = atomo(), t = pk(); if (t && t.t === "op" && t.v === "^") { nx(); return Math.pow(b, expo()); } return b; };
+  const expo = () => { const t = pk(); if (t && t.t === "op" && (t.v === "−" || t.v === "+")) { nx(); const v = expo(); return t.v === "−" ? -v : v; } return potencia(); };
+  const unario = () => { const t = pk(); if (t && t.t === "op" && (t.v === "−" || t.v === "+")) { nx(); const v = unario(); return t.v === "−" ? -v : v; } return potencia(); };
+  const term = () => {
+    let v = unario();
+    for (; ;) {
+      const t = pk();
+      if (t && t.t === "op" && (t.v === "×" || t.v === "÷")) { nx(); const r = unario(); if (t.v === "÷") { if (r === 0) throw new Error("div"); v = v / r; } else v = v * r; }
+      else if (empieza(t)) v = v * potencia(); else break;
+    } return v;
+  };
+  const expr = () => { let v = term(); for (; ;) { const t = pk(); if (t && t.t === "op" && (t.v === "+" || t.v === "−")) { nx(); const r = term(); v = t.v === "+" ? v + r : v - r; } else break; } return v; };
+  const out = expr(); if (p !== T.length) throw new Error("sintaxis");
+  if (!isFinite(out)) throw new Error("dom");
+  return Number(out.toPrecision(12));
+}
+function calcRefresh() {
+  const e = document.getElementById("calcExpr"); if (!e) return;
+  e.textContent = CALC.expr || "0"; e.scrollLeft = e.scrollWidth;
+  document.getElementById("calcRes").textContent = CALC.res;
+  document.getElementById("calcMode").textContent = CALC.deg ? "DEG" : "RAD";
+  document.querySelectorAll("#calcKeys button[data-k=DEG]").forEach(b => b.textContent = CALC.deg ? "DEG" : "RAD");
+}
+function calcSigno() {
+  if (CALC.listo) { CALC.listo = false; CALC.expr = "ANS"; CALC.res = ""; }
+  let m = /\(−(\d+\.?\d*|\.\d+|π|ANS)\)$/.exec(CALC.expr);
+  if (m) { CALC.expr = CALC.expr.slice(0, m.index) + m[1]; return; }
+  m = /(\d+\.?\d*|\.\d+|π|ANS)$/.exec(CALC.expr);
+  if (m) CALC.expr = CALC.expr.slice(0, m.index) + "(−" + m[1] + ")"; else if (CALC.expr === "") CALC.expr = "−";
+}
+function calcPress(k) {
+  if (k === "DEG") { CALC.deg = !CALC.deg; calcRefresh(); return; }
+  if (k === "C") { CALC.expr = ""; CALC.res = ""; CALC.listo = false; calcRefresh(); return; }
+  if (k === "⌫") { CALC.listo = false; CALC.res = ""; CALC.expr = CALC.expr.replace(/(asin\(|acos\(|atan\(|sin\(|cos\(|tan\(|log\(|ln\(|√\(|ANS|.)$/u, ""); calcRefresh(); return; }
+  if (k === "=") {
+    if (!CALC.expr) return;
+    try { CALC.ans = calcEval(CALC.expr, CALC.ans, CALC.deg); CALC.res = calcFmt(CALC.ans); }
+    catch (e) { CALC.res = "Error"; }
+    CALC.listo = true; calcRefresh(); return;
+  }
+  if (k === "±") { calcSigno(); calcRefresh(); return; }
+  let add = k;
+  if (k === "x²") add = "^2"; else if (k === "xʸ") add = "^"; else if (k === "√") add = "√("; else if (/^(sin|cos|tan|asin|acos|atan|log|ln)$/.test(k)) add = k + "(";
+  if (CALC.listo) { CALC.listo = false; CALC.res = ""; CALC.expr = (/^[+−×÷^]/.test(add)) ? "ANS" : ""; }
+  CALC.expr += add; calcRefresh();
+}
+function calcAbrir(ver) {
+  const sh = document.getElementById("calcSheet"), fab = document.getElementById("calcBtn"); if (!sh) return;
+  sh.hidden = !ver; fab.hidden = ver || !CALC.ok; document.body.classList.toggle("calc-open", !!ver);
+  if (ver) { document.body.style.setProperty("--calc-h", (sh.offsetHeight + 16) + "px"); calcRefresh(); }
+}
+function calcAvail(si) {
+  CALC.ok = !!si; if (!document.getElementById("calcSheet")) calcInit();
+  const sh = document.getElementById("calcSheet"), fab = document.getElementById("calcBtn");
+  if (!si) { sh.hidden = true; document.body.classList.remove("calc-open"); fab.hidden = true; return; }
+  fab.hidden = !sh.hidden;
+}
+function calcInit() {
+  const fab = document.createElement("button"); fab.type = "button"; fab.id = "calcBtn"; fab.className = "calc-fab"; fab.hidden = true; fab.textContent = "Calculadora";
+  const sh = document.createElement("div"); sh.id = "calcSheet"; sh.className = "calc-sheet"; sh.hidden = true; sh.setAttribute("role", "dialog"); sh.setAttribute("aria-label", "Calculadora científica");
+  sh.innerHTML = '<div class="calc-h"><b>Calculadora científica</b><span class="calc-mode" id="calcMode">DEG</span><button type="button" id="calcX" aria-label="Cerrar calculadora">×</button></div><div class="calc-d"><div id="calcExpr" class="calc-e">0</div><div id="calcRes" class="calc-r"></div></div><div id="calcKeys" class="calc-k"></div>';
+  document.body.appendChild(fab); document.body.appendChild(sh);
+  const F = new Set(["sin", "cos", "tan", "asin", "acos", "atan", "x²", "√", "xʸ", "π", "log", "ln", "ANS", "DEG", "(", ")"]);
+  CALC_KEYS.flat().forEach(k => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = k; b.dataset.k = k;
+    if (F.has(k)) b.className = "f"; if (k === "=") b.className = "eq"; if (k === "C" || k === "⌫") b.className = "c";
+    b.setAttribute("aria-label", { "⌫": "Borrar", "±": "Cambiar signo", "x²": "Al cuadrado", "xʸ": "Potencia", "√": "Raíz cuadrada", "÷": "Dividir", "×": "Multiplicar", "−": "Restar", "+": "Sumar", "=": "Igual", "C": "Limpiar todo" }[k] || k);
+    b.onclick = () => calcPress(k); sh.querySelector("#calcKeys").appendChild(b);
+  });
+  fab.onclick = () => calcAbrir(true); document.getElementById("calcX").onclick = () => calcAbrir(false);
+  document.addEventListener("keydown", e => {
+    if (sh.hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target && e.target.closest && e.target.closest("input,textarea,select")) return;
+    const k = e.key; let m = null;
+    if (/^[0-9]$/.test(k)) m = k; else if (k === "." || k === ",") m = "."; else if (k === "+") m = "+"; else if (k === "-") m = "−"; else if (k === "*") m = "×"; else if (k === "/") m = "÷";
+    else if (k === "^") m = "xʸ"; else if (k === "(" || k === ")") m = k; else if (k === "Enter" || k === "=") m = "="; else if (k === "Backspace") m = "⌫";
+    else if (k === "Escape") { calcAbrir(false); e.preventDefault(); return; }
+    if (m) { e.preventDefault(); calcPress(m); }
+  });
+}
+
+/* antiayudas */
+["copy", "cut", "paste", "contextmenu", "dragstart"].forEach(ev => document.addEventListener(ev, e => { if (enPrueba && !e.target.closest("[data-libre]")) e.preventDefault(); }));
+const MAX_SAL = 3, TXT_SAL = { fuera: "Salió de la ventana de la prueba", pantalla: "Salió del modo pantalla completa", captura: "Se detectó un intento de captura de pantalla", impresion: "Se intentó imprimir o guardar la página" };
+let ultSal = 0, estuvoPC = false;
+function marcaAgua() {
+  const el = $("#wm"); if (!el) return;
+  if (!enPrueba || !INFO) { el.style.backgroundImage = "none"; return; }
+  const t = (INFO.aspirante + " · " + INFO.documento).replace(/[<>&"']/g, "");
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="380" height="190"><text x="10" y="110" transform="rotate(-24 190 95)" font-family="Arial,sans-serif" font-size="15" fill="#0B1E3F" fill-opacity="0.10">' + t + ' · INDIMON</text></svg>';
+  el.style.backgroundImage = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '")';
+}
+function escudo() {
+  const quedan = MAX_SAL - (E.foco || 0);
+  $("#shT").innerHTML = '<b style="font-size:22px">Advertencia ' + E.foco + ' de ' + MAX_SAL + '</b><br>' + TXT_SAL[E.ultSal || "fuera"] + '.<br>Si vuelve a ocurrir ' + quedan + (quedan === 1 ? ' vez más' : ' veces más') + ', la prueba termina y se envía lo que lleve respondido.';
+  $("#shield").classList.add("on");
+}
+function salio(tipo) {
+  if (!enPrueba || !E || E.fase !== "seccion") return;
+  const ahora = Date.now(); if (ahora - ultSal < 2000) return; ultSal = ahora;
+  E.foco = (E.foco || 0) + 1; E.ultSal = tipo || "fuera"; guardar();
+  if (E.foco >= MAX_SAL) terminarForzada(); else escudo();
+}
+function terminarForzada() {
+  if (!E || E.fase !== "seccion") return;
+  clearInterval(tickH); cerrarModal(); estuvoPC = false;
+  const s = P.secciones[E.sec]; E.tiempos[s.id] = Math.min(Date.now() - E.inicioSec[s.id], s.minutos * 60000);
+  E.terminada = true; E.fase = "enviando"; guardar();
+  $("#shield").classList.remove("on");
+  try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { }
+  pantallaEnvio();
+}
+function fuera(tipo) { if (!enPrueba || !E || E.fase !== "seccion") return; setTimeout(() => { if (document.hidden || !document.hasFocus()) salio(tipo); }, 250); }
+function captura() { try { navigator.clipboard && navigator.clipboard.writeText(" ").catch(() => { }); } catch (e) { } salio("captura"); }
+document.addEventListener("visibilitychange", () => { if (document.hidden) fuera("fuera"); });
+window.addEventListener("blur", () => fuera("fuera"));
+document.addEventListener("fullscreenchange", () => { if (document.fullscreenElement) estuvoPC = true; else if (estuvoPC) { estuvoPC = false; salio("pantalla"); } });
+document.addEventListener("keydown", e => {
+  if (!enPrueba) return;
+  const k = String(e.key || "").toLowerCase(), c = e.code;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (k === "p" || k === "s" || k === "u")) { e.preventDefault(); if (k !== "u") salio("impresion"); return; }
+  if (k === "printscreen" || c === "PrintScreen") { captura(); return; }
+  if (e.metaKey && e.shiftKey && ["Digit3", "Digit4", "Digit5", "KeyS"].includes(c)) captura();
+});
+document.addEventListener("keyup", e => { if (enPrueba && (e.key === "PrintScreen" || e.code === "PrintScreen")) captura(); });
+window.addEventListener("beforeprint", () => { if (enPrueba) salio("impresion"); });
+$("#shBtn").onclick = () => { $("#shield").classList.remove("on"); try { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => { }); } catch (e) { } };
+
+async function iniciar() {
+  if (!T) return error("El enlace está incompleto. Ábralo tal como le llegó por WhatsApp.");
+  E = ls(LK);
+  if (E && E.fase === "enviando") return pantallaEnvio();
+  if (E && E.fase === "fin") return pantallaFin();
+  try { INFO = await api("candAbrir", { t: T }); } catch (e) { return error(e.message); }
+  if (INFO.finalizada) { E = { fase: "fin" }; guardar(); return pantallaFin(); }
+  if (INFO.pendiente) return pantallaEspera();
+  if (INFO.vencida) return pantallaVencida();
+  P = INFO.prueba;
+  if (INFO.iniciada && E) { E.iniServ = INFO.iniciada; E.desfase = Date.now() - Date.parse(INFO.ahora); }
+  if (!E) E = { fase: "inicio", sec: 0, resp: {}, inicioSec: {}, tiempos: {}, foco: 0 };
+  if (E.fase === "seccion") return pantallaSeccion();
+  if (E.fase === "inter") return pantallaInter();
+  pantallaInicio();
+}
+const TZ = "America/Bogota";
+function fHoraC(v) { const d = new Date(v); if (isNaN(d)) return ""; return d.toLocaleDateString("es-CO", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: TZ }) + " a las " + d.toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit", timeZone: TZ }); }
+function soloHoraC(v) { const d = new Date(v); return isNaN(d) ? "" : d.toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit", timeZone: TZ }); }
+function cuentaAtras(ms) { const s = Math.max(0, Math.floor(ms / 1000)), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (d ? d + " d " : "") + (d || h ? h + " h " : "") + m + " min " + String(x).padStart(2, "0") + " s"; }
+function pantallaEspera() {
+  enPrueba = false; hdr("Prueba programada", false, false);
+  const desfase = Date.parse(INFO.ahora) - Date.now(), abre = Date.parse(INFO.abre);
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>Su prueba está programada</h1>
+    <p>Hola, <b>${esc(INFO.aspirante)}</b>. Su prueba para el cargo de <b>${esc(INFO.cargo)}</b> es el <b>${esc(fHoraC(INFO.programada))}</b> (hora de Colombia).</p>
+    <p>Podrá ingresar desde las <b>${esc(soloHoraC(INFO.abre))}</b> y tendrá hasta las <b>${esc(soloHoraC(INFO.vence))}</b> para iniciarla; pasada esa hora el enlace vence y deberá pedir una nueva hora a Gestión Humana.</p>
+    <div class="aviso" id="cuenta"></div><p class="tenue">Puede dejar esta página abierta: se habilitará sola a la hora indicada.</p></div>`;
+  clearInterval(tickH);
+  const t = () => { const rem = abre - (Date.now() + desfase); if (rem <= 0) { clearInterval(tickH); iniciar(); return; } $("#cuenta").innerHTML = `Faltan <b>${cuentaAtras(rem)}</b> para que se habilite la prueba.`; };
+  tickH = setInterval(t, 1000); t();
+}
+function pantallaVencida() {
+  enPrueba = false; hdr("Enlace vencido", false, false);
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>El enlace venció</h1><div class="aviso mal">Su prueba estaba programada para el <b>${esc(fHoraC(INFO.programada))}</b> y no se inició dentro del plazo (hasta las <b>${esc(soloHoraC(INFO.vence))}</b>)</div>
+    <p>Comuníquese con Gestión Humana de INDIMON para fijar una nueva hora. Se le enviará un enlace nuevo.</p></div>`;
+}
+function error(m) { hdr("Prueba técnica", false, false); app.innerHTML = `<div class="card">${logoHTML()}<h1>No se puede abrir la prueba</h1><p>${esc(m)}</p><p class="tenue">Si cree que es un error, comuníquese con Gestión Humana de INDIMON.</p></div>`; }
+
+function pantallaInicio() {
+  hdr(P.nombre, false, false);
+  const min = P.secciones.reduce((a, s) => a + (s.minutos || 0), 0);
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>${esc(P.nombre)}</h1>
+   <p>Hola, <b>${esc(INFO.aspirante)}</b>. Esta prueba hace parte del proceso de selección para el cargo de <b>${esc(INFO.cargo)}</b>.</p>
+   <p class="tenue">Solicitud ${esc(INFO.id)} · Documento ${esc(INFO.documento)}</p></div>
+   <div class="card"><h2>Antes de empezar</h2><ul>
+   <li>Duración: <b>${min} minutos</b>${P.secciones.length > 1 ? ` en ${P.secciones.length} partes; cada parte tiene su propio tiempo y, al cerrarla, no se puede volver` : ""}.</li>
+   <li>Tenga a mano lápiz y papel. Puede usar su calculadora científica (no programable) <b>o</b> la calculadora integrada de la prueba (botón «Calculadora» en las partes con cálculos). No use la del celular ni la del computador: cuenta como salida de la ventana.</li>
+   ${INFO.programada && !INFO.iniciada ? `<li>Programada para el <b>${esc(fHoraC(INFO.programada))}</b>. Debe iniciarla antes de las <b>${esc(soloHoraC(INFO.vence))}</b>; después el enlace vence.</li>` : ""}
+   <li>Cuando el tiempo termina, la prueba se entrega sola con lo que haya respondido.</li>
+   <li>No cierre esta página mientras presenta la prueba. Si se le cierra, abra de nuevo el mismo enlace: el tiempo sigue corriendo.</li>
+   <li><b>Límite de salidas:</b> cambiar de pestaña o aplicación, salir de pantalla completa o intentar capturar o imprimir la pantalla cuenta como una advertencia. <b>A la tercera, la prueba termina</b> y se envía lo que haya respondido hasta ese momento. En el celular active «No molestar» antes de empezar.</li>
+   <li>La pantalla lleva su nombre y documento como marca de agua. Está prohibido fotografiar o copiar las preguntas.</li>
+   ${P.anexo ? "<li>Puede consultar la <b>Hoja de datos</b> (botón de arriba) durante la prueba.</li>" : ""}
+   </ul>
+   <label class="f" style="display:flex;gap:8px;align-items:flex-start;font-weight:500"><input type="checkbox" id="dec" style="margin-top:4px"><span>Declaro que soy <b>${esc(INFO.aspirante)}</b> y que presento esta prueba solo, sin ayuda de otras personas, de inteligencia artificial, de apuntes ni de internet. Autorizo a INDIMON SAS a tratar mis datos y los resultados de esta prueba únicamente para su proceso de selección, conforme a su Política de Tratamiento de Datos Personales (Ley 1581 de 2012).</span></label>
+   <div id="err" class="err"></div><button class="btn" id="bIni">Iniciar prueba</button></div>`;
+  $("#bIni").onclick = async () => {
+    if (!$("#dec").checked) { $("#err").textContent = "Debe aceptar la declaración para continuar."; return; }
+    $("#bIni").disabled = true; $("#err").textContent = "";
+    try { const r = await api("candIniciar", { t: T }); E.iniServ = r.iniciada; E.desfase = Date.now() - Date.parse(r.ahora); } catch (e) { $("#err").textContent = e.message; $("#bIni").disabled = false; return; }
+    E.declaracion = true; E.fase = "inter"; guardar();
+    try { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => { }); } catch (e) { }
+    pantallaInter();
+  };
+}
+function pantallaInter() {
+  enPrueba = true; clearInterval(tickH);
+  const s = P.secciones[E.sec];
+  if (P.secciones.length === 1) { E.fase = "seccion"; E.inicioSec[s.id] = E.inicioSec[s.id] || Date.now(); guardar(); return pantallaSeccion(); }
+  hdr(`${s.titulo}`, false, true);
+  app.innerHTML = `<div class="card"><h1>${esc(s.titulo)}</h1>${s.descripcion ? `<p>${esc(s.descripcion)}</p>` : ""}
+    <p><b>${s.preguntas.length} pregunta(s)</b> · <b>${s.minutos} minutos</b></p>
+    <p class="tenue">Parte ${E.sec + 1} de ${P.secciones.length}. El tiempo empieza al presionar el botón. Al cerrar esta parte no podrá volver a ella.</p>
+    <button class="btn" id="bGo">Comenzar</button></div>`;
+  $("#bGo").onclick = () => { E.fase = "seccion"; E.inicioSec[s.id] = Date.now(); guardar(); pantallaSeccion(); };
+}
+
+/* ----- render de preguntas ----- */
+function rq(q, n) {
+  const R = E.resp, id = q.id;
+  const img = q.imagen ? `<div class="fig"><img src="${q.imagen}" onclick="verImg(this.src)" alt=""></div>` : "";
+  const imgs = q.imagenes && q.imagenes.length ? `<div class="figs">${q.imagenes.map(i => `<div class="fig"><img src="${i.src}" onclick="verImg(this.src)" alt="">${i.pie ? `<div class="tenue">${esc(i.pie)}</div>` : ""}</div>`).join("")}</div><div class="tenue" style="text-align:center">Toque la figura para ampliarla</div>` : "";
+  let h = `<div class="q" data-q="${esc(id)}"><div class="enun">${n}. ${q.titulo ? esc(q.titulo) + (q.enunciado ? ". " : "") : ""}${esc(q.enunciado)}</div>${img}${imgs}`;
+  if (q.tipo === "unica" || q.tipo === "multiple") {
+    const orden = barajar(q.opciones.length, T + id), tipo = q.tipo === "unica" ? "radio" : "checkbox";
+    if (q.tipo === "multiple") h += `<div class="tenue">Puede marcar varias.</div>`;
+    h += orden.map((i, j) => `<label class="op"><input type="${tipo}" name="r_${esc(id)}" data-q="${esc(id)}" value="${i}"><span>${"abcdefghij"[j]}) ${esc(q.opciones[i])}</span></label>`).join("");
+  } else if (q.tipo === "vf") {
+    h += q.items.map((it, i) => `<div class="vf"><span>${esc(it)}</span><span class="bt"><label><input type="radio" name="vf_${esc(id)}_${i}" data-q="${esc(id)}" data-i="${i}" value="V">V</label><label><input type="radio" name="vf_${esc(id)}_${i}" data-q="${esc(id)}" data-i="${i}" value="F">F</label></span></div>`).join("");
+  } else if (q.tipo === "numero") {
+    h += q.campos.map(c => `<div class="campo"><span>${esc(c.etiqueta)}</span><input type="text" inputmode="decimal" autocomplete="off" data-libre="1" data-q="${esc(id)}" data-k="${esc(c.k)}" placeholder="0.0"><span class="tenue">${esc(c.unidad || "")}</span></div>`).join("");
+  } else if (q.tipo === "emparejar") {
+    const orden = barajar(q.opciones.length, T + id + "o"), oi = barajar(q.items.length, T + id + "i");
+    h += oi.map((i, j) => { const it = q.items[i]; return `<div class="empar" style="${it.texto ? "grid-template-columns:110px 1fr" : ""}">${it.imagen ? `<img src="${it.imagen}" alt="">` : `<b style="font-size:17px">${esc(it.texto)}</b>`}<select data-q="${esc(id)}" data-i="${i}"><option value="">— elija —</option>${orden.map(o => `<option value="${o}">${esc(q.opciones[o])}</option>`).join("")}</select></div>`; }).join("");
+  } else if (q.tipo === "abierta") {
+    h += q.items.map((it, i) => `<div class="abi">${q.items.length > 1 || it.imagen ? `<b>${esc(it.etiqueta)}</b>` : ""}${it.imagen ? `<img src="${it.imagen}" onclick="verImg(this.src)" alt="">` : ""}<textarea data-libre="1" data-q="${esc(id)}" data-i="${i}" placeholder="Escriba su respuesta"></textarea></div>`).join("");
+  }
+  return h + `</div>`;
+}
+function cargarResp() {
+  $$("[data-q]", app).forEach(el => {
+    const id = el.dataset.q, r = E.resp[id]; if (r === undefined || el.classList.contains("q")) return;
+    if (el.type === "radio" && el.dataset.i === undefined) { if (+el.value === r) { el.checked = true; el.closest(".op").classList.add("sel"); } }
+    else if (el.type === "radio") { if (r[el.dataset.i] === (el.value === "V")) el.checked = true; }
+    else if (el.type === "checkbox") { if (r.indexOf(+el.value) >= 0) { el.checked = true; el.closest(".op").classList.add("sel"); } }
+    else if (el.tagName === "SELECT") { if (r[el.dataset.i] !== undefined && r[el.dataset.i] !== null) el.value = r[el.dataset.i]; }
+    else if (el.dataset.k) { if (r[el.dataset.k] !== undefined) el.value = r[el.dataset.k]; }
+    else if (el.tagName === "TEXTAREA") { if (r[el.dataset.i] !== undefined) el.value = r[el.dataset.i]; }
+  });
+}
+function leerCambio(el) {
+  const id = el.dataset.q, R = E.resp;
+  if (el.type === "radio" && el.dataset.i === undefined) { R[id] = +el.value; $$(`input[name="r_${CSS.escape(id)}"]`).forEach(x => x.closest(".op").classList.toggle("sel", x.checked)); }
+  else if (el.type === "radio") { R[id] = R[id] || []; R[id][+el.dataset.i] = el.value === "V"; }
+  else if (el.type === "checkbox") { R[id] = $$(`input[name="r_${CSS.escape(id)}"]`).filter(x => x.checked).map(x => +x.value); el.closest(".op").classList.toggle("sel", el.checked); }
+  else if (el.tagName === "SELECT") { R[id] = R[id] || []; R[id][+el.dataset.i] = el.value === "" ? null : +el.value; }
+  else if (el.dataset.k) { R[id] = R[id] || {}; R[id][el.dataset.k] = el.value; }
+  else if (el.tagName === "TEXTAREA") { R[id] = R[id] || []; R[id][+el.dataset.i] = el.value; }
+  guardar(); contar();
+}
+function contar() {
+  const s = P.secciones[E.sec]; let n = 0;
+  s.preguntas.forEach(q => { const r = E.resp[q.id]; if (r === undefined || r === null) return; if (Array.isArray(r) ? r.some(x => x !== null && x !== undefined && x !== "") : typeof r === "object" ? Object.values(r).some(v => String(v).trim()) : true) n++; });
+  const c = $("#cnt"); if (c) c.textContent = n + " de " + s.preguntas.length;
+}
+function pantallaSeccion() {
+  enPrueba = true;
+  const s = P.secciones[E.sec];
+  hdr(s.titulo, true, true);
+  let n = 0; P.secciones.slice(0, E.sec).forEach(x => n += x.preguntas.length);
+  app.innerHTML = `<div class="card noselect"><h2>${esc(s.titulo)}</h2>${s.preguntas.map((q, i) => rq(q, n + i + 1)).join("")}</div>
+   <div class="barra"><span class="tenue">Respondidas: <b id="cnt"></b></span><button class="btn" id="bFin">${E.sec + 1 < P.secciones.length ? "Terminar esta parte" : "Entregar prueba"}</button></div>`;
+  cargarResp(); contar();
+  $$("[data-q]", app).forEach(el => { if (el.classList.contains("q")) return; el.addEventListener("change", () => leerCambio(el)); el.addEventListener("input", () => leerCambio(el)); });
+  $("#bFin").onclick = () => confirmar(E.sec + 1 < P.secciones.length ? "¿Terminar esta parte?" : "¿Entregar la prueba?", E.sec + 1 < P.secciones.length ? "No podrá volver a esta parte." : "Después de entregar no podrá cambiar sus respuestas.", () => cerrarSeccion(false), E.sec + 1 < P.secciones.length ? "Terminar parte" : "Entregar");
+  clearInterval(tickH); tickH = setInterval(tick, 500); tick();
+  calcAvail(s.preguntas.some(q => q.tipo === "numero"));
+}
+function limiteSeccion() {
+  const s = P.secciones[E.sec], fin = E.inicioSec[s.id] + s.minutos * 60000;
+  let finGlobal = Infinity;
+  if (E.iniServ) finGlobal = Date.parse(E.iniServ) + (E.desfase || 0) + P.secciones.reduce((a, x) => a + x.minutos, 0) * 60000 + 120000;
+  return Math.min(fin, finGlobal);
+}
+function tick() {
+  if (!E || E.fase !== "seccion") return;
+  const rem = limiteSeccion() - Date.now(), r = $("#reloj"); r.textContent = fmt(rem); r.classList.toggle("bajo", rem < 120000);
+  if (rem <= 0) cerrarSeccion(true);
+}
+function cerrarSeccion(auto) {
+  clearInterval(tickH); cerrarModal();
+  const s = P.secciones[E.sec]; E.tiempos[s.id] = Math.min(Date.now() - E.inicioSec[s.id], s.minutos * 60000);
+  if (E.sec + 1 < P.secciones.length) { E.sec++; E.fase = "inter"; guardar(); pantallaInter(); }
+  else { E.fase = "enviando"; guardar(); pantallaEnvio(); }
+}
+let intentos = 0, reintH = null;
+async function pantallaEnvio() {
+  enPrueba = false; clearInterval(tickH); hdr("Entregando prueba", false, false);
+  clearTimeout(reintH); intentos++;
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba terminada</h1>${E.terminada ? `<div class="aviso mal"><b>La prueba se dio por finalizada</b> porque salió de la ventana 3 veces. Se envía lo que había respondido hasta ese momento.</div>` : ""}<div class="aviso"><b>Registrando sus respuestas…</b> No cierre esta página.${intentos > 1 ? ` (intento ${intentos})` : ""}</div></div>`;
+  try {
+    await api("candEntregar", { t: T, respuestas: E.resp, tiempos: E.tiempos, foco: E.foco || 0, declaracion: !!E.declaracion, dispositivo: (E.terminada ? "[TERMINADA POR SALIDAS] " : "") + navigator.userAgent.slice(0, 90) });
+    E = { fase: "fin", terminada: !!E.terminada }; guardar(); pantallaFin();
+  } catch (e) {
+    if (e.servidor && /no válido|anulada/i.test(e.message)) return error(e.message);
+    app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba terminada</h1><div class="aviso"><b>No se pudo registrar todavía.</b> Revise su conexión a internet. Se intentará de nuevo automáticamente en 10 segundos. <b>No cierre esta página.</b></div><button class="btn" id="bRe">Reintentar ahora</button></div>`;
+    $("#bRe").onclick = pantallaEnvio; reintH = setTimeout(pantallaEnvio, 10000);
+  }
+}
+function pantallaFin() {
+  enPrueba = false; hdr("Prueba entregada", false, false);
+  app.innerHTML = `<div class="card">${logoHTML()}<h1>Prueba entregada</h1>${E && E.terminada ? `<div class="aviso mal"><b>La prueba se dio por finalizada</b> porque salió de la ventana 3 veces; se registró lo respondido hasta ese momento.</div>` : ""}<div class="aviso ok" style="font-size:16px"><b>✓ Sus respuestas quedaron registradas.</b> Ya puede cerrar esta página.</div><p class="tenue">Gestión Humana de INDIMON se comunicará con usted para informarle los siguientes pasos del proceso.</p></div>`;
+}
+iniciar();
+</script>
+</body>
+</html>
